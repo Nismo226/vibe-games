@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+
+    "build": "node scripts/build.mjs",
+    "build:local": "tsc && vite build",
+
     "preview": "vite preview",
 
-    "build:pages": "VITE_DEPLOY_TARGET=pages pnpm run build && node scripts/postbuild-pages.mjs",
+    "build:pages": "VITE_DEPLOY_TARGET=pages pnpm run build:local && node scripts/postbuild-pages.mjs",
     "preview:pages": "pnpm run build:pages && (cd dist && python3 -m http.server 4173)",
 
     "tauri": "bash -lc 'source $HOME/.cargo/env >/dev/null 2>&1 || true; tauri \"$@\"' --",
