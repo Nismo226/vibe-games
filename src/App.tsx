@@ -509,15 +509,16 @@ function App() {
 
   // --- Web audio fallback ---
   type WebSfxKind = SfxKind | "enemy_pickup";
+  const webBaseUrl = (import.meta as any).env?.BASE_URL || "/";
   const webSfxUrls: Record<WebSfxKind, string> = {
-    eat: "/sfx/eat.wav",
-    boost: "/sfx/boost.wav",
-    poison: "/sfx/poison.wav",
-    dash: "/sfx/dash.wav",
-    shield: "/sfx/shield.wav",
-    death: "/sfx/death.wav",
-    ui: "/sfx/ui.wav",
-    enemy_pickup: "/sfx/enemy_pickup.wav",
+    eat: webBaseUrl + "sfx/eat.wav",
+    boost: webBaseUrl + "sfx/boost.wav",
+    poison: webBaseUrl + "sfx/poison.wav",
+    dash: webBaseUrl + "sfx/dash.wav",
+    shield: webBaseUrl + "sfx/shield.wav",
+    death: webBaseUrl + "sfx/death.wav",
+    ui: webBaseUrl + "sfx/ui.wav",
+    enemy_pickup: webBaseUrl + "sfx/enemy_pickup.wav",
   };
 
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -535,7 +536,7 @@ function App() {
 
   function ensureWebBgm() {
     if (bgmAudioRef.current) return bgmAudioRef.current;
-    const a = new Audio("/music/bgm.ogg");
+    const a = new Audio(webBaseUrl + "music/bgm.ogg");
     a.loop = true;
     a.preload = "auto";
     bgmAudioRef.current = a;
@@ -741,13 +742,30 @@ function App() {
     };
   }
 
-  // Unlock audio on first pointer gesture (helps some Tauri/webviews)
-  useEffect(() => {
-    function onPtr() {
-          }
-    document.addEventListener("pointerdown", onPtr, { capture: true });
-    return () => document.removeEventListener("pointerdown", onPtr, { capture: true } as any);
-  }, []);
+  function lockInRps() {
+    const ph = phaseRef.current;
+    if (ph.kind !== "rps" || !ph.your) return;
+
+    // roll AI choice and resolve
+    setState((prev) => {
+      const rr = randChoice(prev.seed);
+      const ai = rr.value;
+      const res = rpsResult(ph.your!, ai);
+
+      queueMicrotask(() => {
+        setToast(`RPS: you ${ph.your} vs ai ${ai} → ${res.toUpperCase()}`);
+        setTimeout(() => setToast(null), 1800);
+        setPhase({ kind: "rpsResult", res, your: ph.your!, ai });
+      });
+
+      if (res === "tie") {
+        const moved = relocateAfterTie({ ...prev, seed: rr.seed });
+        return moved;
+      }
+
+      return { ...prev, seed: rr.seed };
+    });
+  }
 
   // Key handling (Tauri webview focus can be finicky; listen on document + keep canvas focusable)
   useEffect(() => {
@@ -782,28 +800,7 @@ function App() {
 
         if (ph.kind === "rps") {
           e.preventDefault();
-          if (!ph.your) return;
-          // roll AI choice and resolve
-          setState((prev) => {
-            const rr = randChoice(prev.seed);
-            const ai = rr.value;
-            const res = rpsResult(ph.your!, ai);
-
-            queueMicrotask(() => {
-              // show what happened
-              setToast(`RPS: you ${ph.your} vs ai ${ai} → ${res.toUpperCase()}`);
-              setTimeout(() => setToast(null), 1800);
-
-              setPhase({ kind: "rpsResult", res, your: ph.your!, ai });
-            });
-
-            if (res === "tie") {
-              const moved = relocateAfterTie({ ...prev, seed: rr.seed });
-              return moved;
-            }
-
-            return { ...prev, seed: rr.seed };
-          });
+          lockInRps();
           return;
         }
       }
@@ -2142,11 +2139,29 @@ function App() {
               <p>
                 Pick one: <b>← Rock</b> • <b>↑ Paper</b> • <b>→ Scissors</b> • <b>Enter</b> to lock.
               </p>
-              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 12 }}>
-                <div className={"pill" + (phase.your === "rock" ? " primary" : "")}>Rock</div>
-                <div className={"pill" + (phase.your === "paper" ? " primary" : "")}>Paper</div>
-                <div className={"pill" + (phase.your === "scissors" ? " primary" : "")}>Scissors</div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
+                <button
+                  className={"pill" + (phase.your === "rock" ? " primary" : "")}
+                  onClick={() => setPhase((p) => (p.kind === "rps" ? { ...p, your: "rock" } : p))}
+                >
+                  Rock
+                </button>
+                <button
+                  className={"pill" + (phase.your === "paper" ? " primary" : "")}
+                  onClick={() => setPhase((p) => (p.kind === "rps" ? { ...p, your: "paper" } : p))}
+                >
+                  Paper
+                </button>
+                <button
+                  className={"pill" + (phase.your === "scissors" ? " primary" : "")}
+                  onClick={() => setPhase((p) => (p.kind === "rps" ? { ...p, your: "scissors" } : p))}
+                >
+                  Scissors
+                </button>
               </div>
+              <button className="primary" style={{ marginTop: 12 }} onClick={lockInRps} disabled={!phase.your}>
+                Lock In
+              </button>
               <div className="fine" style={{ marginTop: 10 }}>
                 If you win: instant victory. If you lose: game over. Tie: both snakes reposition and the run continues.
               </div>
@@ -2214,19 +2229,7 @@ function App() {
       </div>
 
       {phase.kind === "playing" && (
-        <div
-          style={{
-            position: "fixed",
-            right: 18,
-            bottom: 18,
-            display: "grid",
-            gridTemplateColumns: "48px 48px 48px",
-            gridTemplateRows: "48px 48px 48px",
-            gap: 8,
-            zIndex: 50,
-            opacity: 0.9,
-          }}
-        >
+        <div className="touchPad">
           <div />
           <button className="pill" onClick={() => queueDir({ x: 0, y: -1 })}>
             ↑

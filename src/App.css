@@ -148,6 +148,44 @@ body,
   padding: 20px;
   background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(8px);
+  z-index: 100;
+}
+
+.touchPad {
+  position: fixed;
+  left: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: 52px 52px 52px;
+  grid-template-rows: 52px 52px 52px;
+  gap: 8px;
+  z-index: 120;
+  opacity: 0.92;
+}
+
+@media (max-width: 700px) {
+  .topBar {
+    padding-bottom: 8px;
+  }
+
+  .bottomBar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .touchPad {
+    left: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    grid-template-columns: 46px 46px 46px;
+    grid-template-rows: 46px 46px 46px;
+    gap: 6px;
+  }
+
+  .panel {
+    max-height: 84vh;
+    overflow: auto;
+  }
 }
 
 .panel {
