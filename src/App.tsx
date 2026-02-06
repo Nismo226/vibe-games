@@ -523,7 +523,66 @@ function App() {
 
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  const webAudioCtxRef = useRef<AudioContext | null>(null);
+
+  function webCtx() {
+    if (webAudioCtxRef.current) return webAudioCtxRef.current;
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return null;
+    webAudioCtxRef.current = new Ctx();
+    return webAudioCtxRef.current;
+  }
+
+  function webBossSfx() {
+    const ctx = webCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // quick "boss" chirp: detuned double-osc + downward sweep + soft distortion
+    const o1 = ctx.createOscillator();
+    const o2 = ctx.createOscillator();
+    const g = ctx.createGain();
+    const shaper = ctx.createWaveShaper();
+
+    const makeCurve = (amt = 18) => {
+      const n = 44100;
+      const curve = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const x = (i * 2) / n - 1;
+        curve[i] = ((1 + amt) * x) / (1 + amt * Math.abs(x));
+      }
+      return curve;
+    };
+    shaper.curve = makeCurve(12);
+
+    o1.type = "sawtooth";
+    o2.type = "square";
+    o1.frequency.setValueAtTime(620, now);
+    o2.frequency.setValueAtTime(520, now);
+    o1.frequency.exponentialRampToValueAtTime(140, now + 0.14);
+    o2.frequency.exponentialRampToValueAtTime(120, now + 0.14);
+
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.55 * clamp(sfxVolume, 0, 1), now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+    o1.connect(shaper);
+    o2.connect(shaper);
+    shaper.connect(g);
+    g.connect(ctx.destination);
+
+    o1.start(now);
+    o2.start(now);
+    o1.stop(now + 0.2);
+    o2.stop(now + 0.2);
+  }
+
   function webPlaySfx(kind: string) {
+    if (kind === "enemy_pickup") {
+      webBossSfx();
+      return;
+    }
+
     const src = (webSfxUrls as any)[kind];
     if (!src) return;
     // clone-per-play so rapid events can overlap
@@ -580,6 +639,12 @@ function App() {
     if (isTauri) return;
 
     const unlock = () => {
+      // resume audio context for synthesized sounds
+      try {
+        const ctx = webCtx();
+        if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+      } catch {}
+
       if (!bgmOn) return;
       const a = ensureWebBgm();
       a.volume = clamp(bgmVolume, 0, 1);
@@ -660,6 +725,9 @@ function App() {
   const lastGamepadDirRef = useRef<Vec | null>(null);
 
   const [phase, setPhase] = useState<GamePhase>({ kind: "menu" });
+
+  // swipe-to-turn (mobile)
+  const swipeRef = useRef<{ active: boolean; x: number; y: number }>({ active: false, x: 0, y: 0 });
   const phaseRef = useRef<GamePhase>(phase);
   useEffect(() => {
     phaseRef.current = phase;
@@ -1975,23 +2043,12 @@ function App() {
               value={sfxVolume}
               onChange={(e) => setSfxVolume(Number(e.target.value))}
               onPointerDown={() => {
-                                sfx("ui");
+                sfx("ui");
               }}
             />
           </label>
 
-          <button
-            className="mini"
-            onClick={() => {
-              
-              // Test Rust-native SFX path
-              sfx("ui");
-              setToast(`SFX test • muted=${sfxMuted} • vol=${sfxVolume.toFixed(2)}`);
-              setTimeout(() => setToast(null), 1400);
-            }}
-          >
-            Test SFX
-          </button>
+          {/* Test SFX button removed for production */}
         </div>
 
         <div className="hint">
@@ -2009,9 +2066,42 @@ function App() {
           ref={canvasRef}
           className="gameCanvas"
           tabIndex={0}
-          onPointerDown={() => {
+          onPointerDown={(e) => {
             canvasRef.current?.focus();
-                        sfx("ui");
+            sfx("ui");
+
+            // swipe tracking
+            const t = swipeRef.current;
+            t.active = true;
+            t.x = e.clientX;
+            t.y = e.clientY;
+          }}
+          onPointerMove={(e) => {
+            const t = swipeRef.current;
+            if (!t.active) return;
+            const dx = e.clientX - t.x;
+            const dy = e.clientY - t.y;
+            const adx = Math.abs(dx);
+            const ady = Math.abs(dy);
+            const thresh = 18;
+            if (adx < thresh && ady < thresh) return;
+
+            // lock to dominant axis
+            if (adx >= ady) {
+              queueDir({ x: dx > 0 ? 1 : -1, y: 0 });
+            } else {
+              queueDir({ x: 0, y: dy > 0 ? 1 : -1 });
+            }
+
+            // reset so you can chain fast turns
+            t.x = e.clientX;
+            t.y = e.clientY;
+          }}
+          onPointerUp={() => {
+            swipeRef.current.active = false;
+          }}
+          onPointerCancel={() => {
+            swipeRef.current.active = false;
           }}
         />
 
@@ -2231,21 +2321,45 @@ function App() {
       {phase.kind === "playing" && (
         <div className="touchPad">
           <div />
-          <button className="pill" onClick={() => queueDir({ x: 0, y: -1 })}>
+          <button
+            className="pill"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              queueDir({ x: 0, y: -1 });
+            }}
+          >
             ↑
           </button>
           <div />
-          <button className="pill" onClick={() => queueDir({ x: -1, y: 0 })}>
+          <button
+            className="pill"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              queueDir({ x: -1, y: 0 });
+            }}
+          >
             ←
           </button>
-          <button className="pill" onClick={() => queueDir({ x: 0, y: 1 })}>
+          <button
+            className="pill"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              queueDir({ x: 0, y: 1 });
+            }}
+          >
             ↓
           </button>
-          <button className="pill" onClick={() => queueDir({ x: 1, y: 0 })}>
+          <button
+            className="pill"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              queueDir({ x: 1, y: 0 });
+            }}
+          >
             →
           </button>
-          <div style={{ gridColumn: "1 / span 3", textAlign: "center", fontSize: 12, opacity: 0.8 }}>
-            Click arrows if keyboard won’t work
+          <div style={{ gridColumn: "1 / span 3", textAlign: "center", fontSize: 11, opacity: 0.8 }}>
+            Tap or swipe to turn
           </div>
         </div>
       )}
