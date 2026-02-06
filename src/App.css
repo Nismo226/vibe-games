@@ -174,8 +174,15 @@ body,
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* On phones, keep toast away from the touch D-pad */
+  .toast {
+    top: calc(92px + env(safe-area-inset-top, 0px));
+    bottom: auto;
+  }
+
   .touchPad {
-    left: 10px;
+    left: auto;
+    right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     grid-template-columns: 46px 46px 46px;
     grid-template-rows: 46px 46px 46px;
