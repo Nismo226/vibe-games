@@ -133,11 +133,13 @@ body,
 
 /* Coordinates tuned for the provided 800x800 art (percentage of the square) */
 .landingHotspot.start {
-  clip-path: inset(39% 13% 46% 13% round 18px);
+  /* moved down to align with art */
+  clip-path: inset(43% 13% 42% 13% round 18px);
 }
 
 .landingHotspot.settings {
-  clip-path: inset(56% 13% 29% 13% round 18px);
+  /* moved down to align with art */
+  clip-path: inset(60% 13% 25% 13% round 18px);
 }
 
 .gameCanvas {

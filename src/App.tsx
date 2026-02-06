@@ -612,22 +612,41 @@ function App() {
     return webBaseUrl + (t?.src || "music/track1.mp3");
   }
 
+  function nextWebTrack() {
+    setWebBgmTrackId((prev) => {
+      const i = webBgmTracks.findIndex((t) => t.id === prev);
+      const next = webBgmTracks[(i >= 0 ? i + 1 : 1) % webBgmTracks.length];
+      return next?.id || "track1";
+    });
+  }
+
   function ensureWebBgm() {
     const desired = webBgmSrc();
+
+    const wire = (a: HTMLAudioElement) => {
+      a.loop = false; // play sequentially, not repeat
+      a.onended = () => {
+        // advance playlist when a track ends
+        if (bgmOn) nextWebTrack();
+      };
+    };
+
     if (bgmAudioRef.current) {
-      if (bgmAudioRef.current.src !== desired) {
+      const a = bgmAudioRef.current;
+      wire(a);
+      if (a.src !== desired) {
         try {
-          bgmAudioRef.current.pause();
+          a.pause();
         } catch {}
-        bgmAudioRef.current.src = desired;
-        bgmAudioRef.current.load();
+        a.src = desired;
+        a.load();
       }
-      return bgmAudioRef.current;
+      return a;
     }
 
     const a = new Audio(desired);
-    a.loop = true;
     a.preload = "auto";
+    wire(a);
     bgmAudioRef.current = a;
     return a;
   }
@@ -1505,6 +1524,23 @@ function App() {
       const eaten = s.enemySnake.length - enemyBiteIndex;
       const newEnemy = s.enemySnake.slice(0, enemyBiteIndex);
 
+      // If you bite so close to the head that the rival would become length-1,
+      // treat it as a decisive win (otherwise the AI freezes).
+      if (newEnemy.length < 2) {
+        addShake(8);
+        spawnBurst(next, "rgba(255, 210, 90, 0.95)", 40);
+        sfx("enemy_pickup");
+        queueMicrotask(() => setPhaseIfPlaying({ kind: "win", winner: "you" }));
+        return {
+          ...s,
+          seed,
+          foodA,
+          foodB,
+          dir,
+          score: s.score + eaten * 10,
+        };
+      }
+
       addShake(5);
       spawnBurst(next, "rgba(255, 210, 90, 0.95)", 28);
       sfx("enemy_pickup");
@@ -2052,9 +2088,32 @@ function App() {
             {sfxMuted ? "Unmute SFX" : "Mute SFX"}
           </button>
 
-          <button className="mini" onClick={() => { setBgmOn((x) => !x); sfx("ui"); }}>
+          <button
+            className="mini"
+            onClick={() => {
+              setBgmOn((x) => !x);
+              sfx("ui");
+            }}
+          >
             {bgmOn ? "Music On" : "Music Off"}
           </button>
+
+          {!isTauri && (
+            <button
+              className="mini"
+              onClick={() => {
+                // skip to next track
+                setWebBgmTrackId((prev) => {
+                  const i = webBgmTracks.findIndex((t) => t.id === prev);
+                  const next = webBgmTracks[(i >= 0 ? i + 1 : 1) % webBgmTracks.length];
+                  return next?.id || "track1";
+                });
+                sfx("ui");
+              }}
+            >
+              Next Track
+            </button>
+          )}
 
           <label className="vol">
             <span>Music</span>
