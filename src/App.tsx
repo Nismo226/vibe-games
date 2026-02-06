@@ -476,11 +476,23 @@ function App() {
 
   type SfxKind = "eat" | "boost" | "poison" | "dash" | "shield" | "death" | "ui";
 
-  // --- Persistent debug log (writes to Tauri app-data file) ---
+  // --- Runtime detection (Tauri vs Web) ---
+  const isTauri = useMemo(() => {
+    const w = window as any;
+    return !!(w.__TAURI__?.core?.invoke || w.__TAURI_INTERNALS__);
+  }, []);
+
+  async function safeInvoke(cmd: string, args: any) {
+    if (!isTauri) throw new Error("not-tauri");
+    return invoke(cmd as any, args);
+  }
+
+  // --- Persistent debug log (Tauri only) ---
   const logQueueRef = useRef<string[]>([]);
   const logFlushTimerRef = useRef<number | null>(null);
 
   function logLine(line: string) {
+    if (!isTauri) return;
     const ts = new Date().toISOString();
     logQueueRef.current.push("[" + ts + "] " + line);
 
@@ -489,25 +501,99 @@ function App() {
       const batch = logQueueRef.current.splice(0, 200);
       logFlushTimerRef.current = null;
       if (!batch.length) return;
-      invoke("append_log", { lines: batch }).catch(() => {
+      safeInvoke("append_log", { lines: batch }).catch(() => {
         // ignore logging failures
       });
     }, 150);
   }
 
-  // --- BGM (Rust backend) ---
+  // --- Web audio fallback ---
+  type WebSfxKind = SfxKind | "enemy_pickup";
+  const webSfxUrls: Record<WebSfxKind, string> = {
+    eat: "/sfx/eat.wav",
+    boost: "/sfx/boost.wav",
+    poison: "/sfx/poison.wav",
+    dash: "/sfx/dash.wav",
+    shield: "/sfx/shield.wav",
+    death: "/sfx/death.wav",
+    ui: "/sfx/ui.wav",
+    enemy_pickup: "/sfx/enemy_pickup.wav",
+  };
+
+  const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  function webPlaySfx(kind: string) {
+    const src = (webSfxUrls as any)[kind];
+    if (!src) return;
+    // clone-per-play so rapid events can overlap
+    const a = new Audio(src);
+    a.volume = clamp(sfxVolume, 0, 1);
+    a.play().catch(() => {
+      // browser may block until user interaction; ignore
+    });
+  }
+
+  function ensureWebBgm() {
+    if (bgmAudioRef.current) return bgmAudioRef.current;
+    const a = new Audio("/music/bgm.ogg");
+    a.loop = true;
+    a.preload = "auto";
+    bgmAudioRef.current = a;
+    return a;
+  }
+
+  // --- BGM (Tauri backend OR Web fallback) ---
   useEffect(() => {
     localStorage.setItem("ultimateSnake_bgmVolume", String(bgmVolume));
-    invoke("bgm_volume", { volume: bgmVolume, muted: !bgmOn }).catch(() => {});
-  }, [bgmVolume, bgmOn]);
+    if (isTauri) {
+      safeInvoke("bgm_volume", { volume: bgmVolume, muted: !bgmOn }).catch(() => {});
+    } else {
+      const a = ensureWebBgm();
+      a.volume = bgmOn ? clamp(bgmVolume, 0, 1) : 0;
+    }
+  }, [bgmVolume, bgmOn, isTauri]);
 
   useEffect(() => {
     localStorage.setItem("ultimateSnake_bgmOn", bgmOn ? "1" : "0");
-    if (bgmOn) invoke("bgm_play", { volume: bgmVolume, muted: false }).catch(() => {});
-    else invoke("bgm_stop", {}).catch(() => {});
-  }, [bgmOn]);
 
-  // --- SFX (Rust backend via Tauri invoke) ---
+    if (isTauri) {
+      if (bgmOn) safeInvoke("bgm_play", { volume: bgmVolume, muted: false }).catch(() => {});
+      else safeInvoke("bgm_stop", {}).catch(() => {});
+      return;
+    }
+
+    const a = ensureWebBgm();
+    a.volume = bgmOn ? clamp(bgmVolume, 0, 1) : 0;
+    if (bgmOn) {
+      a.play().catch(() => {
+        // will start after first user interaction; see unlock effect below
+      });
+    } else {
+      a.pause();
+      a.currentTime = 0;
+    }
+  }, [bgmOn, bgmVolume, isTauri]);
+
+  // Try to "unlock" audio on first interaction (Web only)
+  useEffect(() => {
+    if (isTauri) return;
+
+    const unlock = () => {
+      if (!bgmOn) return;
+      const a = ensureWebBgm();
+      a.volume = clamp(bgmVolume, 0, 1);
+      a.play().catch(() => {});
+    };
+
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [isTauri, bgmOn, bgmVolume]);
+
+  // --- SFX (Tauri invoke OR Web fallback) ---
   useEffect(() => {
     localStorage.setItem("ultimateSnake_sfxMuted", sfxMuted ? "1" : "0");
   }, [sfxMuted]);
@@ -523,6 +609,12 @@ function App() {
 
   function sfx(kind: SfxKind | string) {
     if (sfxMuted || sfxVolume <= 0.001) return;
+
+    if (!isTauri) {
+      webPlaySfx(kind);
+      return;
+    }
+
     logLine(
       "SFX invoke <" +
         kind +
@@ -531,7 +623,7 @@ function App() {
         " muted=" +
         String(sfxMuted),
     );
-    invoke("play_sfx", { kind, volume: sfxVolume, muted: sfxMuted }).catch((err: any) => {
+    safeInvoke("play_sfx", { kind, volume: sfxVolume, muted: sfxMuted }).catch((err: any) => {
       const msg = String(err?.message || err);
       logLine("SFX invoke <" + kind + "> failed: " + msg);
     });
