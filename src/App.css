@@ -97,6 +97,69 @@ body,
     #070a14;
 }
 
+.landing {
+  position: absolute;
+  inset: 0;
+  z-index: 110;
+  background: url("/ultimate-snake/ui-landing.jpg") center/cover no-repeat;
+}
+
+/* In local/tauri builds base is /, so also allow root path */
+@supports (background: url("/ui-landing.jpg")) {
+  .landing {
+    background-image: url("/ui-landing.jpg");
+  }
+}
+
+.landingInner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.landingButtons {
+  width: min(560px, 86vw);
+  display: grid;
+  gap: 18px;
+  margin-top: 40px;
+}
+
+.landingBtn {
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 26px;
+  padding: 20px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(80, 255, 190, 0.55);
+  color: rgba(150, 255, 210, 0.95);
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 2px rgba(80, 255, 190, 0.12), 0 18px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+}
+
+.landingBtn.secondary {
+  border-color: rgba(80, 255, 190, 0.35);
+  color: rgba(150, 255, 210, 0.85);
+  opacity: 0.95;
+}
+
+.landingBtn:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 700px) {
+  .landingButtons {
+    gap: 14px;
+    margin-top: 30px;
+  }
+  .landingBtn {
+    font-size: 20px;
+    padding: 16px 16px;
+  }
+}
+
 .gameCanvas {
   display: block;
   width: 100%;

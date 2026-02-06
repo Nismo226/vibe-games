@@ -470,6 +470,20 @@ function App() {
     return localStorage.getItem("ultimateSnake_bgmOn") !== "0";
   });
 
+  const webBgmTracks = useMemo(
+    () => [
+      { id: "track1", label: "Track 1", src: "music/track1.mp3" },
+      { id: "track2", label: "Track 2", src: "music/track2.mp3" },
+      { id: "track3", label: "Track 3", src: "music/track3.mp3" },
+      { id: "track4", label: "Track 4", src: "music/track4.mp3" },
+    ],
+    [],
+  );
+
+  const [webBgmTrackId, setWebBgmTrackId] = useState<string>(() => {
+    return localStorage.getItem("ultimateSnake_webBgmTrack") || "track1";
+  });
+
   const [sfxMuted, setSfxMuted] = useState<boolean>(() => {
     return localStorage.getItem("ultimateSnake_sfxMuted") === "1";
   });
@@ -593,9 +607,25 @@ function App() {
     });
   }
 
+  function webBgmSrc() {
+    const t = webBgmTracks.find((x) => x.id === webBgmTrackId) || webBgmTracks[0];
+    return webBaseUrl + (t?.src || "music/track1.mp3");
+  }
+
   function ensureWebBgm() {
-    if (bgmAudioRef.current) return bgmAudioRef.current;
-    const a = new Audio(webBaseUrl + "music/bgm.ogg");
+    const desired = webBgmSrc();
+    if (bgmAudioRef.current) {
+      if (bgmAudioRef.current.src !== desired) {
+        try {
+          bgmAudioRef.current.pause();
+        } catch {}
+        bgmAudioRef.current.src = desired;
+        bgmAudioRef.current.load();
+      }
+      return bgmAudioRef.current;
+    }
+
+    const a = new Audio(desired);
     a.loop = true;
     a.preload = "auto";
     bgmAudioRef.current = a;
@@ -632,7 +662,11 @@ function App() {
       a.pause();
       a.currentTime = 0;
     }
-  }, [bgmOn, bgmVolume, isTauri]);
+  }, [bgmOn, bgmVolume, isTauri, webBgmTrackId]);
+
+  useEffect(() => {
+    localStorage.setItem("ultimateSnake_webBgmTrack", webBgmTrackId);
+  }, [webBgmTrackId]);
 
   // Try to "unlock" audio on first interaction (Web only)
   useEffect(() => {
@@ -748,6 +782,7 @@ function App() {
   const [upgradeChoices, setUpgradeChoices] = useState<UpgradeDef[]>([]);
   const [overlayIndex, setOverlayIndex] = useState<number>(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
   useEffect(() => {
     if (phase.kind === "startperk" || phase.kind === "upgrade" || phase.kind === "gameover" || phase.kind === "win") {
@@ -2108,32 +2143,69 @@ function App() {
         {toast && <div className="toast">{toast}</div>}
 
         {phase.kind === "menu" && (
-          <div className="overlay">
+          <div className="landing">
+            <div className="landingInner">
+              <div className="landingButtons">
+                <button
+                  className="landingBtn"
+                  onClick={() => {
+                    sfx("ui");
+                    startNewGame();
+                  }}
+                >
+                  START GAME
+                </button>
+                <button
+                  className="landingBtn secondary"
+                  onClick={() => {
+                    sfx("ui");
+                    setSettingsOpen(true);
+                  }}
+                >
+                  SETTINGS
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {settingsOpen && (
+          <div className="overlay" onPointerDown={() => {}}>
             <div className="panel">
-              <h2>Ultimate Snake</h2>
-              <p>
-                Survive 30-second rounds. After each round, pick an upgrade… but every upgrade also makes the game harder.
-              </p>
+              <h2>Settings</h2>
               <div className="grid2">
                 <div className="stat">
                   <div className="label">Best</div>
                   <div className="value">{state.bestScore}</div>
                 </div>
                 <div className="stat">
-                  <div className="label">Controls</div>
-                  <div className="value">WASD / Arrows</div>
+                  <div className="label">Mobile</div>
+                  <div className="value">Swipe to turn</div>
                 </div>
               </div>
-              <button
-                className="primary"
-                onClick={() => {
-                                    sfx("ui");
-                  startNewGame();
-                }}
-              >
-                Start (Enter)
+
+              {!isTauri && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="fine" style={{ marginBottom: 6 }}>
+                    Background music track
+                  </div>
+                  <select
+                    value={webBgmTrackId}
+                    onChange={(e) => setWebBgmTrackId(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 12 }}
+                  >
+                    {webBgmTracks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <button className="primary" onClick={() => setSettingsOpen(false)}>
+                Done
               </button>
-              <div className="fine">Esc returns to menu mid-run.</div>
             </div>
           </div>
         )}
