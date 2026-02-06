@@ -183,7 +183,8 @@ body,
   .touchPad {
     left: auto;
     right: 10px;
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    /* lift above the bottom bar + iOS Safari UI */
+    bottom: calc(132px + env(safe-area-inset-bottom, 0px));
     grid-template-columns: 46px 46px 46px;
     grid-template-rows: 46px 46px 46px;
     gap: 6px;
