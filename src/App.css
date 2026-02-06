@@ -101,63 +101,43 @@ body,
   position: absolute;
   inset: 0;
   z-index: 110;
-  background: url("/ultimate-snake/ui-landing.jpg") center/cover no-repeat;
-}
-
-/* In local/tauri builds base is /, so also allow root path */
-@supports (background: url("/ui-landing.jpg")) {
-  .landing {
-    background-image: url("/ui-landing.jpg");
-  }
-}
-
-.landingInner {
-  position: absolute;
-  inset: 0;
   display: grid;
   place-items: center;
+  background: #070a14;
 }
 
-.landingButtons {
-  width: min(560px, 86vw);
-  display: grid;
-  gap: 18px;
-  margin-top: 40px;
+.landingImg {
+  width: min(92vmin, 860px);
+  height: auto;
+  max-width: 96vw;
+  border-radius: 18px;
+  box-shadow: 0 30px 120px rgba(0, 0, 0, 0.65);
 }
 
-.landingBtn {
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 26px;
-  padding: 20px 18px;
+/* Hotspots are positioned relative to the image box */
+.landingHotspot {
+  position: absolute;
+  width: min(92vmin, 860px);
+  aspect-ratio: 1 / 1;
+  max-width: 96vw;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   border-radius: 16px;
-  border: 1px solid rgba(80, 255, 190, 0.55);
-  color: rgba(150, 255, 210, 0.95);
-  background: rgba(0, 0, 0, 0.35);
-  box-shadow: 0 0 0 2px rgba(80, 255, 190, 0.12), 0 18px 60px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
 }
 
-.landingBtn.secondary {
-  border-color: rgba(80, 255, 190, 0.35);
-  color: rgba(150, 255, 210, 0.85);
-  opacity: 0.95;
+.landingHotspot:focus-visible {
+  outline: 3px solid rgba(80, 255, 190, 0.65);
+  outline-offset: 4px;
 }
 
-.landingBtn:active {
-  transform: translateY(1px);
+/* Coordinates tuned for the provided 800x800 art (percentage of the square) */
+.landingHotspot.start {
+  clip-path: inset(39% 13% 46% 13% round 18px);
 }
 
-@media (max-width: 700px) {
-  .landingButtons {
-    gap: 14px;
-    margin-top: 30px;
-  }
-  .landingBtn {
-    font-size: 20px;
-    padding: 16px 16px;
-  }
+.landingHotspot.settings {
+  clip-path: inset(56% 13% 29% 13% round 18px);
 }
 
 .gameCanvas {
@@ -212,7 +192,7 @@ body,
   padding: 20px;
   background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(8px);
-  z-index: 100;
+  z-index: 300;
 }
 
 .touchPad {

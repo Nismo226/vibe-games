@@ -2144,28 +2144,25 @@ function App() {
 
         {phase.kind === "menu" && (
           <div className="landing">
-            <div className="landingInner">
-              <div className="landingButtons">
-                <button
-                  className="landingBtn"
-                  onClick={() => {
-                    sfx("ui");
-                    startNewGame();
-                  }}
-                >
-                  START GAME
-                </button>
-                <button
-                  className="landingBtn secondary"
-                  onClick={() => {
-                    sfx("ui");
-                    setSettingsOpen(true);
-                  }}
-                >
-                  SETTINGS
-                </button>
-              </div>
-            </div>
+            <img className="landingImg" src={(import.meta as any).env?.BASE_URL + "ui-landing.jpg"} alt="Ultimate Snake" />
+
+            {/* Invisible click zones matching the art */}
+            <button
+              className="landingHotspot start"
+              aria-label="Start Game"
+              onClick={() => {
+                sfx("ui");
+                startNewGame();
+              }}
+            />
+            <button
+              className="landingHotspot settings"
+              aria-label="Settings"
+              onClick={() => {
+                sfx("ui");
+                setSettingsOpen(true);
+              }}
+            />
           </div>
         )}
 
