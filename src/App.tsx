@@ -488,6 +488,89 @@ function App() {
     return localStorage.getItem("ultimateSnake_sfxMuted") === "1";
   });
 
+  // --- Snake customization (web + tauri) ---
+  type SnakeSkin = {
+    presetId: string;
+
+    // gradient along the body
+    hueStart: number; // 0..360
+    hueEnd: number; // 0..360
+    sat: number; // 0..100
+    light: number; // 0..100
+    alpha: number; // 0..1
+
+    // bloom strength
+    bloom: number; // 0..1
+
+    // geometry
+    headRound: number; // 0..0.5
+    bodyRound: number; // 0..0.5
+
+    // eyes
+    eyesOn: boolean;
+    eyeSize: number; // multiplier
+  };
+
+  const DEFAULT_SKIN: SnakeSkin = {
+    presetId: "neonClassic",
+    hueStart: 270,
+    hueEnd: 80,
+    sat: 95,
+    light: 62,
+    alpha: 0.92,
+    bloom: 0.35,
+    headRound: 0.18,
+    bodyRound: 0.28,
+    eyesOn: true,
+    eyeSize: 1,
+  };
+
+  const SKIN_PRESETS: Array<{ id: string; label: string; skin: SnakeSkin }> = [
+    { id: "neonClassic", label: "Neon Classic", skin: DEFAULT_SKIN },
+    {
+      id: "toxic",
+      label: "Toxic Slime",
+      skin: { ...DEFAULT_SKIN, presetId: "toxic", hueStart: 135, hueEnd: 60, sat: 98, light: 58, bloom: 0.42 },
+    },
+    {
+      id: "vapor",
+      label: "Vaporwave",
+      skin: { ...DEFAULT_SKIN, presetId: "vapor", hueStart: 310, hueEnd: 190, sat: 95, light: 64, bloom: 0.48 },
+    },
+    {
+      id: "ice",
+      label: "Ice",
+      skin: { ...DEFAULT_SKIN, presetId: "ice", hueStart: 200, hueEnd: 260, sat: 80, light: 70, bloom: 0.35 },
+    },
+    {
+      id: "inferno",
+      label: "Inferno",
+      skin: { ...DEFAULT_SKIN, presetId: "inferno", hueStart: 20, hueEnd: 330, sat: 98, light: 58, bloom: 0.5 },
+    },
+    {
+      id: "mono",
+      label: "Mono",
+      skin: { ...DEFAULT_SKIN, presetId: "mono", hueStart: 0, hueEnd: 0, sat: 0, light: 75, alpha: 0.95, bloom: 0.2 },
+    },
+  ];
+
+  const [skin, setSkin] = useState<SnakeSkin>(() => {
+    try {
+      const raw = localStorage.getItem("ultimateSnake_skin");
+      if (!raw) return DEFAULT_SKIN;
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_SKIN, ...parsed } as SnakeSkin;
+    } catch {
+      return DEFAULT_SKIN;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ultimateSnake_skin", JSON.stringify(skin));
+    } catch {}
+  }, [skin]);
+
   type SfxKind = "eat" | "boost" | "poison" | "dash" | "shield" | "death" | "ui";
 
   // --- Runtime detection (Tauri vs Web) ---
@@ -802,12 +885,56 @@ function App() {
   const [overlayIndex, setOverlayIndex] = useState<number>(0);
   const [toast, setToast] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const skinPreviewRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     if (phase.kind === "startperk" || phase.kind === "upgrade" || phase.kind === "gameover" || phase.kind === "win") {
       setOverlayIndex(0);
     }
   }, [phase.kind]);
+
+  // Settings: live skin preview (head + ~10 segments)
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const c = skinPreviewRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+
+    const w = c.width;
+    const h = c.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // background
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.fillRect(0, 0, w, h);
+
+    const n = 11;
+    const size = Math.min(42, Math.floor((w - 24) / n));
+    const y = Math.floor(h / 2 - size / 2);
+
+    for (let i = 0; i < n; i++) {
+      const t = i / Math.max(1, n - 1);
+      const hue = skin.hueStart + (skin.hueEnd - skin.hueStart) * t;
+      ctx.fillStyle = `hsl(${hue} ${clamp(skin.sat, 0, 100)}% ${clamp(skin.light, 0, 100)}% / ${clamp(skin.alpha, 0, 1)})`;
+      const x = 12 + i * size;
+      const rr = i === 0 ? skin.headRound : skin.bodyRound;
+      // reuse same geometry as game
+      roundedRect(ctx as any, x, y, size - 4, size - 4, (size - 4) * clamp(rr, 0, 0.5));
+      ctx.fill();
+
+      if (i === 0 && skin.eyesOn) {
+        ctx.fillStyle = "rgba(10,10,20,0.7)";
+        const ex = x + (size - 4) * 0.35;
+        const ey = y + (size - 4) * 0.38;
+        const eyeR = (size - 4) * 0.10 * clamp(skin.eyeSize, 0.6, 2.0);
+        ctx.beginPath();
+        ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
+        ctx.arc(x + (size - 4) * 0.70, ey, eyeR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }, [settingsOpen, skin]);
 
   // input debug removed (was used for VM key troubleshooting)
 
@@ -1958,27 +2085,28 @@ function App() {
       }
     }
 
-    // player snake
+    // player snake (customizable)
     for (let i = s.snake.length - 1; i >= 0; i--) {
       const seg = s.snake[i];
       const px = ox + seg.x * cell;
       const py = oy + seg.y * cell;
       const t = i / Math.max(1, s.snake.length - 1);
 
-      const hue = 270 - t * 190;
-      ctx.fillStyle = `hsl(${hue} 95% 62% / 0.92)`;
-      const r = i === 0 ? 0.18 : 0.28;
-      roundedRect(ctx, px + 1, py + 1, cell - 2, cell - 2, cell * r);
+      const hue = skin.hueStart + (skin.hueEnd - skin.hueStart) * t;
+      ctx.fillStyle = `hsl(${hue} ${clamp(skin.sat, 0, 100)}% ${clamp(skin.light, 0, 100)}% / ${clamp(skin.alpha, 0, 1)})`;
+      const rr = i === 0 ? skin.headRound : skin.bodyRound;
+      roundedRect(ctx, px + 1, py + 1, cell - 2, cell - 2, cell * clamp(rr, 0, 0.5));
       ctx.fill();
 
-      if (i === 0) {
+      if (i === 0 && skin.eyesOn) {
         // eyes
         ctx.fillStyle = "rgba(10, 10, 20, 0.7)";
         const ex = px + cell * 0.35;
         const ey = py + cell * 0.35;
+        const eyeR = cell * 0.08 * clamp(skin.eyeSize, 0.6, 2.0);
         ctx.beginPath();
-        ctx.arc(ex, ey, cell * 0.08, 0, Math.PI * 2);
-        ctx.arc(px + cell * 0.65, ey, cell * 0.08, 0, Math.PI * 2);
+        ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
+        ctx.arc(px + cell * 0.65, ey, eyeR, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -2012,7 +2140,7 @@ function App() {
       ctx.save();
       const blurPx = Math.max(4, Math.floor(cell * 0.22));
       ctx.globalCompositeOperation = "screen";
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = clamp(skin.bloom, 0, 1);
       ctx.filter = `blur(${blurPx}px)`;
       ctx.drawImage(c, 0, 0);
       ctx.filter = "none";
@@ -2239,6 +2367,65 @@ function App() {
                   <div className="value">Swipe to turn</div>
                 </div>
               </div>
+
+              {/* Live preview */}
+              <div className="stat" style={{ marginTop: 10 }}>
+                <div className="label">Snake preview</div>
+                <div className="value" style={{ marginTop: 8 }}>
+                  <canvas className="skinPreview" ref={skinPreviewRef} width={560} height={120} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div className="fine" style={{ marginBottom: 6 }}>
+                  Presets
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {SKIN_PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      className={"pill" + (skin.presetId === p.id ? " primary" : "")}
+                      onClick={() => setSkin({ ...p.skin })}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer" }}>Advanced</summary>
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  <label className="vol">
+                    <span>Hue start</span>
+                    <input type="range" min={0} max={360} step={1} value={skin.hueStart} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", hueStart: Number(e.target.value) }))} />
+                  </label>
+                  <label className="vol">
+                    <span>Hue end</span>
+                    <input type="range" min={0} max={360} step={1} value={skin.hueEnd} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", hueEnd: Number(e.target.value) }))} />
+                  </label>
+                  <label className="vol">
+                    <span>Saturation</span>
+                    <input type="range" min={0} max={100} step={1} value={skin.sat} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", sat: Number(e.target.value) }))} />
+                  </label>
+                  <label className="vol">
+                    <span>Light</span>
+                    <input type="range" min={20} max={85} step={1} value={skin.light} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", light: Number(e.target.value) }))} />
+                  </label>
+                  <label className="vol">
+                    <span>Glow</span>
+                    <input type="range" min={0} max={1} step={0.05} value={skin.bloom} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", bloom: Number(e.target.value) }))} />
+                  </label>
+                  <label className="vol">
+                    <span>Eyes</span>
+                    <input type="checkbox" checked={skin.eyesOn} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", eyesOn: e.target.checked }))} />
+                  </label>
+                  <label className="vol">
+                    <span>Eye size</span>
+                    <input type="range" min={0.6} max={2} step={0.1} value={skin.eyeSize} onChange={(e) => setSkin((s) => ({ ...s, presetId: "custom", eyeSize: Number(e.target.value) }))} />
+                  </label>
+                </div>
+              </details>
 
               {!isTauri && (
                 <div style={{ marginTop: 12 }}>
