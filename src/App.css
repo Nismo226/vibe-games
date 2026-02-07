@@ -168,6 +168,18 @@ body,
     repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 18px);
 }
 
+.controlsMockHud {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  opacity: 0.95;
+}
+
 .gameCanvas {
   display: block;
   width: 100%;

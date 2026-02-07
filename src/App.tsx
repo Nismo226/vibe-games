@@ -973,14 +973,26 @@ function App() {
   const [controlPos, setControlPos] = useState<{
     touchPadRight: number;
     touchPadBottom: number;
+    touchPadScale: number;
     useLeft: number;
     useBottom: number;
+    useScale: number;
   }>(() => {
     try {
       const raw = localStorage.getItem("ultimateSnake_controlPos");
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const p = JSON.parse(raw);
+        return {
+          touchPadRight: p.touchPadRight ?? 12,
+          touchPadBottom: p.touchPadBottom ?? 150,
+          touchPadScale: p.touchPadScale ?? 1,
+          useLeft: p.useLeft ?? 12,
+          useBottom: p.useBottom ?? 150,
+          useScale: p.useScale ?? 1,
+        };
+      }
     } catch {}
-    return { touchPadRight: 12, touchPadBottom: 150, useLeft: 12, useBottom: 150 };
+    return { touchPadRight: 12, touchPadBottom: 150, touchPadScale: 1, useLeft: 12, useBottom: 150, useScale: 1 };
   });
 
   useEffect(() => {
@@ -2398,6 +2410,18 @@ function App() {
           <button
             className="mini"
             onClick={() => {
+              sfx("ui");
+              setSettingsOpen(false);
+              setControlsEditorOpen(false);
+              setEditControls(false);
+              setPhase({ kind: "menu" });
+            }}
+          >
+            Menu
+          </button>
+          <button
+            className="mini"
+            onClick={() => {
                             setSfxMuted((m) => {
                 const next = !m;
                 setToast(next ? "SFX muted" : "SFX on");
@@ -2862,6 +2886,12 @@ function App() {
             <div className="fine">Drag the controls where you want them. This is a mock playfield preview.</div>
             <div className="controlsMockStage">
               <div className="controlsMockBoard" />
+              <div className="controlsMockHud">
+                <div className="pill">Round: 15s</div>
+                <div className="pill">Food: green</div>
+                <div className="pill">Poison: orange ×</div>
+                <div className="pill">Walls: pink blocks</div>
+              </div>
 
               {/* USE mock */}
               <button
@@ -2869,6 +2899,8 @@ function App() {
                 style={{
                   left: controlPos.useLeft,
                   bottom: "calc(" + controlPos.useBottom + "px + env(safe-area-inset-bottom, 0px))",
+                  transform: `scale(${controlPos.useScale})`,
+                  transformOrigin: "left bottom",
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault();
@@ -2909,6 +2941,8 @@ function App() {
                 style={{
                   right: controlPos.touchPadRight,
                   bottom: "calc(" + controlPos.touchPadBottom + "px + env(safe-area-inset-bottom, 0px))",
+                  transform: `scale(${controlPos.touchPadScale})`,
+                  transformOrigin: "right bottom",
                 }}
                 onPointerDown={(e) => {
                   const target = e.target as HTMLElement;
@@ -2962,15 +2996,45 @@ function App() {
               </div>
             </div>
 
-            <button
-              className="primary"
-              onClick={() => {
-                setControlsEditorOpen(false);
-                setEditControls(false);
-              }}
-            >
-              Done
-            </button>
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              <div className="stat">
+                <div className="label">Resize</div>
+                <div className="value" style={{ display: "grid", gap: 10 }}>
+                  <label className="vol">
+                    <span>D-pad size</span>
+                    <input
+                      type="range"
+                      min={0.7}
+                      max={1.6}
+                      step={0.05}
+                      value={controlPos.touchPadScale}
+                      onChange={(e) => setControlPos((p) => ({ ...p, touchPadScale: Number(e.target.value) }))}
+                    />
+                  </label>
+                  <label className="vol">
+                    <span>USE size</span>
+                    <input
+                      type="range"
+                      min={0.7}
+                      max={1.6}
+                      step={0.05}
+                      value={controlPos.useScale}
+                      onChange={(e) => setControlPos((p) => ({ ...p, useScale: Number(e.target.value) }))}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <button
+                className="primary"
+                onClick={() => {
+                  setControlsEditorOpen(false);
+                  setEditControls(false);
+                }}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2983,6 +3047,8 @@ function App() {
               style={{
                 left: controlPos.useLeft,
                 bottom: `calc(${controlPos.useBottom}px + env(safe-area-inset-bottom, 0px))`,
+                transform: `scale(${controlPos.useScale})`,
+                transformOrigin: "left bottom",
               }}
               onPointerDown={(e) => {
                 if (editControls) {
@@ -3028,6 +3094,8 @@ function App() {
             style={{
               right: controlPos.touchPadRight,
               bottom: `calc(${controlPos.touchPadBottom}px + env(safe-area-inset-bottom, 0px))`,
+              transform: `scale(${controlPos.touchPadScale})`,
+              transformOrigin: "right bottom",
             }}
             onPointerDown={(e) => {
               if (!editControls) return;
