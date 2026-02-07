@@ -2344,10 +2344,13 @@ function App() {
       const useSprites = skin.sprite === "taco" && sprites?.ready;
 
       const drawImg = (img: HTMLImageElement, x: number, y: number, rot: number) => {
+        // sprites have transparent padding; draw a bit larger to match the visual size of the neon blocks
+        const scale = skin.sprite === "taco" ? 1.18 : 1;
+        const sz = cell * scale;
         ctx.save();
         ctx.translate(x + cell * 0.5, y + cell * 0.5);
         ctx.rotate(rot);
-        ctx.drawImage(img, -cell * 0.5, -cell * 0.5, cell, cell);
+        ctx.drawImage(img, -sz * 0.5, -sz * 0.5, sz, sz);
         ctx.restore();
       };
 
