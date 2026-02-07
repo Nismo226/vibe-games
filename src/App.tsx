@@ -288,7 +288,7 @@ function initialState(bestScore: number): GameState {
     enemyEnabled: true,
     enemySnake,
     enemyDir: { x: -1, y: 0 },
-    enemySpeed: 7.5,
+    enemySpeed: 5,
     enemyGrowth: 1,
 
     foodA,
@@ -2407,6 +2407,16 @@ function App() {
           </div>
         </div>
         <div className="topControls">
+          <button
+            className="mini"
+            onClick={() => {
+              sfx("ui");
+              setPhase((p) => (p.kind === "playing" ? { kind: "paused" } : p));
+            }}
+          >
+            Pause
+          </button>
+
           <button
             className="mini"
             onClick={() => {
