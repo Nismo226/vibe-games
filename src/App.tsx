@@ -30,20 +30,32 @@ type GamePhase =
   | { kind: "win"; winner: "you" | "rival" };
 
 type UpgradeId =
-  | "shield"
+  | "shield_charge"
   | "magnet"
-  | "slowmo"
+  | "control_chip"
   | "doubleFood"
-  | "multiplier"
-  | "dash"
+  | "dash_charge"
   | "tunnel"
-  | "enemy";
+  | "pacman"
+  | "overclock"
+  | "antidote"
+  | "emp" // inventory active
+  | "phase" // inventory active
+  | "stasis"; // inventory active
+
+type InventoryKind = "emp" | "phase" | "stasis";
 
 type UpgradeDef = {
   id: UpgradeId;
   title: string;
   good: string;
   bad: string;
+
+  // draft rules
+  stackable?: boolean; // if true, can appear multiple times
+  maxStacks?: number; // only if stackable
+  consumable?: boolean; // if true, grants charges (can repeat)
+
   apply: (s: GameState) => GameState;
 };
 
@@ -100,6 +112,11 @@ type GameState = {
 
   // temporary powerups
   enemyEdibleMs: number; // while >0, you can bite rival body (not head)
+  enemySlowMs: number; // slows rival while >0
+
+  // upgrades/inventory
+  upgradeStacks: Partial<Record<UpgradeId, number>>;
+  inventory: { kind: InventoryKind; charges: number } | null;
 };
 
 const ROUND_MS = 15_000;
@@ -303,37 +320,61 @@ function initialState(bestScore: number): GameState {
     shrinkEveryRound: 0,
 
     enemyEdibleMs: 0,
+    enemySlowMs: 0,
+
+    upgradeStacks: {},
+    inventory: null,
   };
 }
 
 const STARTER_PERKS: UpgradeDef[] = [
   {
-    id: "shield",
+    id: "shield_charge",
     title: "Starter: Neon Shield",
     good: "+1 shield charge",
     bad: "+1 random wall each round",
-    apply: (s) => ({ ...s, shieldCharges: s.shieldCharges + 1, wallDensity: s.wallDensity + 1 }),
+    consumable: true,
+    apply: (s) => ({
+      ...s,
+      shieldCharges: s.shieldCharges + 1,
+      wallDensity: s.wallDensity + 1,
+    }),
   },
   {
     id: "magnet",
     title: "Starter: Food Magnet",
     good: "+3 magnet radius",
     bad: "+6% poison chance",
-    apply: (s) => ({ ...s, magnetRadius: s.magnetRadius + 3, poisonChance: clamp(s.poisonChance + 0.06, 0, 0.6) }),
+    stackable: true,
+    maxStacks: 3,
+    apply: (s) => ({
+      ...s,
+      magnetRadius: s.magnetRadius + 3,
+      poisonChance: clamp(s.poisonChance + 0.06, 0, 0.6),
+    }),
   },
   {
-    id: "dash",
+    id: "dash_charge",
     title: "Starter: Dash Core",
-    good: "+1 dash (Space)",
+    good: "+1 dash charge",
     bad: "+2 walls each round",
-    apply: (s) => ({ ...s, dashCharges: s.dashCharges + 1, wallDensity: s.wallDensity + 2 }),
+    consumable: true,
+    apply: (s) => ({
+      ...s,
+      dashCharges: s.dashCharges + 1,
+      wallDensity: s.wallDensity + 2,
+    }),
   },
   {
-    id: "slowmo",
+    id: "control_chip",
     title: "Starter: Control Chip",
     good: "-10% speed (control)",
     bad: "+8% enemy speed",
-    apply: (s) => ({ ...s, slowmoFactor: s.slowmoFactor * 0.9, enemySpeed: s.enemySpeed * 1.08 }),
+    apply: (s) => ({
+      ...s,
+      slowmoFactor: s.slowmoFactor * 0.9,
+      enemySpeed: s.enemySpeed * 1.08,
+    }),
   },
   {
     id: "tunnel",
@@ -343,7 +384,7 @@ const STARTER_PERKS: UpgradeDef[] = [
     apply: (s) => ({ ...s, tunnelWrap: true, speed: s.speed * 1.1 }),
   },
   {
-    id: "multiplier",
+    id: "pacman",
     title: "Starter: Pac-Man Permit",
     good: "For 5s, bite rival body (not head) to steal tail segments",
     bad: "+10% enemy speed",
@@ -357,10 +398,11 @@ const STARTER_PERKS: UpgradeDef[] = [
 
 const UPGRADE_POOL: UpgradeDef[] = [
   {
-    id: "shield",
+    id: "shield_charge",
     title: "Neon Shield",
     good: "+1 shield charge (ignore one fatal hit)",
     bad: "+1 random wall each round",
+    consumable: true,
     apply: (s) => ({
       ...s,
       shieldCharges: s.shieldCharges + 1,
@@ -368,40 +410,53 @@ const UPGRADE_POOL: UpgradeDef[] = [
     }),
   },
   {
-    id: "magnet",
-    title: "Food Magnet",
-    good: "+2 magnet radius (food drifts toward you)",
-    bad: "+10% speed",
-    apply: (s) => ({
-      ...s,
-      magnetRadius: s.magnetRadius + 2,
-      speed: s.speed * 1.1,
-    }),
+    id: "dash_charge",
+    title: "Dash Battery",
+    good: "+1 dash charge",
+    bad: "+7% enemy speed",
+    consumable: true,
+    apply: (s) => ({ ...s, dashCharges: s.dashCharges + 1, enemySpeed: s.enemySpeed * 1.07 }),
   },
   {
-    id: "slowmo",
-    title: "Time Dilator",
-    good: "-12% speed (smoother control)",
-    bad: "+8% poison chance per round",
-    apply: (s) => ({
-      ...s,
-      slowmoFactor: s.slowmoFactor * 0.88,
-      poisonChance: clamp(s.poisonChance + 0.08, 0, 0.6),
-    }),
+    id: "magnet",
+    title: "Magnet Coils",
+    good: "+2 magnet radius",
+    bad: "+10% speed",
+    stackable: true,
+    maxStacks: 3,
+    apply: (s) => ({ ...s, magnetRadius: s.magnetRadius + 2, speed: s.speed * 1.1 }),
   },
   {
     id: "doubleFood",
     title: "Glutton Protocol",
     good: "+1 extra growth per food",
-    bad: "Fog of war (limited visibility)",
+    bad: "+8% poison chance per round",
     apply: (s) => ({
       ...s,
       baseGrowth: s.baseGrowth + 1,
-      fogRadius: s.fogRadius > 0 ? Math.max(3, s.fogRadius - 1) : 7,
+      poisonChance: clamp(s.poisonChance + 0.08, 0, 0.6),
     }),
   },
   {
-    id: "multiplier",
+    id: "control_chip",
+    title: "Time Dilator",
+    good: "-12% speed (smoother control)",
+    bad: "+1 wall each round",
+    apply: (s) => ({
+      ...s,
+      slowmoFactor: s.slowmoFactor * 0.88,
+      wallDensity: s.wallDensity + 1,
+    }),
+  },
+  {
+    id: "tunnel",
+    title: "Wormhole Skin",
+    good: "Wrap through arena edges",
+    bad: "+15% speed",
+    apply: (s) => ({ ...s, tunnelWrap: true, speed: s.speed * 1.15 }),
+  },
+  {
+    id: "pacman",
     title: "Pac-Man Permit",
     good: "For 5s, bite rival body (not head) to steal tail segments",
     bad: "+12% poison chance per round",
@@ -412,28 +467,53 @@ const UPGRADE_POOL: UpgradeDef[] = [
     }),
   },
   {
-    id: "dash",
-    title: "Dash Drive",
-    good: "+1 dash per round (Space)",
-    bad: "+2 walls each round",
+    id: "overclock",
+    title: "Overclock",
+    good: "+12% speed",
+    bad: "+1 enemy growth per food",
+    apply: (s) => ({ ...s, speed: s.speed * 1.12, enemyGrowth: clamp(s.enemyGrowth + 1, 1, 4) }),
+  },
+  {
+    id: "antidote",
+    title: "Antidote Gel",
+    good: "Poison penalty reduced",
+    bad: "+8% enemy speed",
+    apply: (s) => ({ ...s, enemySpeed: s.enemySpeed * 1.08 }),
+  },
+  {
+    id: "emp",
+    title: "EMP Pulse (Inventory)",
+    good: "Store 1 EMP. Use to slow rival for 4s",
+    bad: "+10% poison chance per round",
     apply: (s) => ({
       ...s,
-      dashCharges: s.dashCharges + 1,
-      wallDensity: s.wallDensity + 2,
+      inventory: { kind: "emp", charges: 1 },
+      poisonChance: clamp(s.poisonChance + 0.1, 0, 0.6),
     }),
   },
   {
-    id: "tunnel",
-    title: "Wormhole Skin",
-    good: "Wrap through arena edges (exit the opposite side)",
-    bad: "+15% speed",
+    id: "phase",
+    title: "Phase Shift (Inventory)",
+    good: "Store 1 Phase. Use to become intangible briefly",
+    bad: "+1 wall each round",
     apply: (s) => ({
       ...s,
-      tunnelWrap: true,
-      speed: s.speed * 1.15,
+      inventory: { kind: "phase", charges: 1 },
+      wallDensity: s.wallDensity + 1,
     }),
   },
-]; 
+  {
+    id: "stasis",
+    title: "Stasis Spike (Inventory)",
+    good: "Store 1 Stasis. Use to nearly-freeze rival for 2.5s",
+    bad: "+10% speed",
+    apply: (s) => ({
+      ...s,
+      inventory: { kind: "stasis", charges: 1 },
+      speed: s.speed * 1.1,
+    }),
+  },
+];
 
 const WIN_LENGTH = 100;
 
@@ -1152,35 +1232,7 @@ function App() {
       if (k === "arrowright" || k === "d") queueDir({ x: 1, y: 0 });
 
       if (k === " ") {
-        // dash: "phase" through self/enemy for a moment
-        let dashedTo: Vec | null = null;
-
-        setState((prev) => {
-          if (prev.dashCharges <= 0) return prev;
-          const dir = prev.nextDir;
-          const head = prev.snake[0];
-          let next = add(head, dir);
-          next = wrapIfNeeded(next, prev);
-          if (!inBounds(next, prev.gridW, prev.gridH)) return prev;
-          if (prev.walls.has(key(next))) return prev;
-
-          dashedTo = next;
-
-          const snake = [next, ...prev.snake];
-          snake.pop();
-          return {
-            ...prev,
-            snake,
-            dashCharges: prev.dashCharges - 1,
-            dashIframes: Math.max(prev.dashIframes, 2),
-          };
-        });
-
-        if (dashedTo) {
-          addShake(1.5);
-          spawnBurst(dashedTo, "rgba(190, 210, 255, 0.95)", 14);
-          sfx("dash");
-        }
+        useActive();
       }
     }
 
@@ -1208,11 +1260,68 @@ function App() {
     });
   }
 
+  function useActive() {
+    let dashedTo: Vec | null = null;
+    let used = false;
+
+    setState((prev) => {
+      // inventory has priority
+      if (prev.inventory && prev.inventory.charges > 0) {
+        used = true;
+        const inv = prev.inventory;
+        let nextState: GameState = { ...prev };
+
+        if (inv.kind === "emp") {
+          nextState = { ...nextState, enemySlowMs: Math.max(nextState.enemySlowMs, 4000) };
+        } else if (inv.kind === "stasis") {
+          nextState = { ...nextState, enemySlowMs: Math.max(nextState.enemySlowMs, 2500) };
+        } else if (inv.kind === "phase") {
+          nextState = { ...nextState, dashIframes: Math.max(nextState.dashIframes, 35) };
+        }
+
+        const remaining = inv.charges - 1;
+        return {
+          ...nextState,
+          inventory: remaining > 0 ? { ...inv, charges: remaining } : null,
+        };
+      }
+
+      // else: dash
+      if (prev.dashCharges <= 0) return prev;
+      used = true;
+
+      const dir = prev.nextDir;
+      const head = prev.snake[0];
+      let next = add(head, dir);
+      next = wrapIfNeeded(next, prev);
+      if (!inBounds(next, prev.gridW, prev.gridH)) return prev;
+      if (prev.walls.has(key(next))) return prev;
+
+      dashedTo = next;
+      const snake = [next, ...prev.snake];
+      snake.pop();
+      return {
+        ...prev,
+        snake,
+        dashCharges: prev.dashCharges - 1,
+        dashIframes: Math.max(prev.dashIframes, 2),
+      };
+    });
+
+    if (dashedTo) {
+      addShake(1.5);
+      spawnBurst(dashedTo, "rgba(190, 210, 255, 0.95)", 14);
+      sfx("dash");
+    } else if (used) {
+      addShake(2);
+      sfx("ui");
+    }
+  }
+
   function startStarterPerkDraft(nextState: GameState) {
-    const shuffled = shuffle(nextState.seed, STARTER_PERKS);
-    const choices = shuffled.value.slice(0, 3);
-    setUpgradeChoices(choices);
-    setState({ ...nextState, seed: shuffled.seed });
+    const d = draftUpgrades(nextState.seed, STARTER_PERKS, nextState);
+    setUpgradeChoices(d.choices);
+    setState({ ...nextState, seed: d.seed });
     setPhase({ kind: "startperk" });
   }
 
@@ -1227,24 +1336,52 @@ function App() {
     // phase set by draft
   }
 
-  function endRoundAndOfferUpgrades(nextState: GameState) {
-    // pick 3 upgrades deterministically from seed, allowing repeats across rounds
-    const shuffled = shuffle(nextState.seed, UPGRADE_POOL);
-    const choices = shuffled.value.slice(0, 3);
+  function canOfferUpgrade(s: GameState, u: UpgradeDef) {
+    const stacks = s.upgradeStacks[u.id] || 0;
+    if (u.consumable) return true;
+    if (u.stackable) {
+      const max = u.maxStacks ?? 999;
+      return stacks < max;
+    }
+    return stacks <= 0;
+  }
 
-    setUpgradeChoices(choices);
-    setState({ ...nextState, seed: shuffled.seed });
+  function draftUpgrades(seed: number, pool: UpgradeDef[], s: GameState) {
+    let ss = seed;
+    const out: UpgradeDef[] = [];
+    let guard = 0;
+
+    while (out.length < 3 && guard++ < 40) {
+      const sh = shuffle(ss, pool);
+      ss = sh.seed;
+      for (const u of sh.value) {
+        if (out.length >= 3) break;
+        if (out.some((x) => x.id === u.id && !u.consumable && !u.stackable)) continue;
+        if (!canOfferUpgrade(s, u)) continue;
+        out.push(u);
+      }
+    }
+
+    return { seed: ss, choices: out.slice(0, 3) };
+  }
+
+  function endRoundAndOfferUpgrades(nextState: GameState) {
+    const d = draftUpgrades(nextState.seed, UPGRADE_POOL, nextState);
+    setUpgradeChoices(d.choices);
+    setState({ ...nextState, seed: d.seed });
     setPhase({ kind: "upgrade" });
   }
 
   function applyUpgrade(u: UpgradeDef) {
     // ensure audio is allowed (first user gesture is clicking this button)
-        sfx("ui");
+    sfx("ui");
     setToast(`${u.title}: ${u.good} / ${u.bad}`);
     setTimeout(() => setToast(null), 2200);
 
     setState((prev) => {
       let s2 = u.apply(prev);
+      const stacks = (prev.upgradeStacks[u.id] || 0) + 1;
+      s2 = { ...s2, upgradeStacks: { ...prev.upgradeStacks, [u.id]: stacks } };
 
       if (phaseRef.current.kind === "startperk") {
         // starter perk: begin round 1 immediately, keep round counter at 1
@@ -1411,6 +1548,7 @@ function App() {
 
         // pac-man timer
         const enemyEdibleMs = Math.max(0, s.enemyEdibleMs - dt);
+        const enemySlowMs = Math.max(0, s.enemySlowMs - dt);
         if (boostFood && boostFoodTtlMs > 0) {
           boostFoodTtlMs = Math.max(0, boostFoodTtlMs - dt);
           if (boostFoodTtlMs <= 0) {
@@ -1419,7 +1557,7 @@ function App() {
           }
         }
 
-        s = { ...s, timeLeftMs, boostFood, boostFoodTtlMs, enemyEdibleMs };
+        s = { ...s, timeLeftMs, boostFood, boostFoodTtlMs, enemyEdibleMs, enemySlowMs };
 
         // movement
         accRef.current += dt;
@@ -1476,115 +1614,130 @@ function App() {
     if (!s.enemyEnabled) return s;
     if (s.enemySnake.length < 2) return s;
 
-    const head = s.enemySnake[0];
-    const target = nearestFood(head, s.foodA, s.foodB).food;
+    // Speed model: enemySpeed is cells/sec; we approximate by moving 0-2 steps per player step.
+    // Also apply enemySlowMs as a temporary slow.
+    const slowFactor = s.enemySlowMs > 0 ? 0.35 : 1;
+    const playerSpd = clamp(s.speed * s.slowmoFactor, 3, 40);
+    const enemySpd = clamp(s.enemySpeed * slowFactor, 1, 40);
+    const ratio = enemySpd / playerSpd;
 
-    const dirs: Vec[] = [
-      { x: 1, y: 0 },
-      { x: -1, y: 0 },
-      { x: 0, y: 1 },
-      { x: 0, y: -1 },
-    ];
-
-    // Greedy-ish: pick a safe move that minimizes distance to nearest food.
-    let bestDir = s.enemyDir;
-    let bestScore = Number.POSITIVE_INFINITY;
-
-    for (const d of dirs) {
-      if (isOpposite(d, s.enemyDir)) continue;
-      let next = add(head, d);
-      next = wrapIfNeeded(next, s);
-
-      if (!inBounds(next, s.gridW, s.gridH)) continue;
-      if (s.walls.has(key(next))) continue;
-      if (s.enemySnake.some((p) => eq(p, next))) continue;
-      if (s.snake.some((p) => eq(p, next))) continue;
-      if (s.poison && eq(s.poison, next)) continue;
-
-      const score = distManhattan(next, target);
-      if (score < bestScore) {
-        bestScore = score;
-        bestDir = d;
-      }
+    // determine steps this tick (deterministic)
+    let steps = 0;
+    let seed = s.seed;
+    const base = Math.floor(ratio);
+    const frac = ratio - base;
+    steps += clamp(base, 0, 2);
+    if (frac > 0) {
+      const r = rand01(seed);
+      seed = nextSeed(seed);
+      if (r < frac) steps += 1;
     }
+    steps = clamp(steps, 0, 2);
+    if (steps <= 0) return { ...s, seed };
 
-    // if no safe move found, just keep direction (may die)
-    let next = add(head, bestDir);
-    next = wrapIfNeeded(next, s);
+    const moveOnce = (st: GameState, ctxOnce?: { playerPrevHead: Vec; enemyPrevHead: Vec; playerNext: Vec }) => {
+      const head = st.enemySnake[0];
+      const target = nearestFood(head, st.foodA, st.foodB).food;
 
-    const hitWall = !inBounds(next, s.gridW, s.gridH) || s.walls.has(key(next));
-    const hitSelf = s.enemySnake.some((p) => eq(p, next));
-    const hitPlayer = s.snake.some((p) => eq(p, next));
+      const dirs: Vec[] = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+      ];
 
-    // head-on handling: if both heads move into each other's previous head cells OR same cell
-    if (ctx) {
-      const swap = eq(next, ctx.playerPrevHead) && eq(ctx.playerNext, ctx.enemyPrevHead);
-      const same = eq(next, ctx.playerNext);
-      if (swap || same) {
-        queueMicrotask(() => setPhaseIfPlaying({ kind: "rps", your: null, ai: null }));
-        return s;
-      }
-    }
+      // Greedy-ish: pick a safe move that minimizes distance to nearest food.
+      let bestDir = st.enemyDir;
+      let bestScore = Number.POSITIVE_INFINITY;
 
-    if (hitPlayer) {
-      addShake(10);
-      spawnBurst(head, "rgba(255, 80, 140, 0.95)", 42);
-      sfx("death");
-      queueMicrotask(() => setPhaseIfPlaying({ kind: "gameover" }));
-      return s;
-    }
+      for (const d of dirs) {
+        if (isOpposite(d, st.enemyDir)) continue;
+        let nx = add(head, d);
+        nx = wrapIfNeeded(nx, st);
 
-    if (hitWall || hitSelf) {
-      // if rival dies, you automatically win
-      queueMicrotask(() => setPhaseIfPlaying({ kind: "win", winner: "you" }));
-      return { ...s, enemySnake: [], enemyEnabled: false };
-    }
+        if (!inBounds(nx, st.gridW, st.gridH)) continue;
+        if (st.walls.has(key(nx))) continue;
+        if (st.enemySnake.some((p) => eq(p, nx))) continue;
+        if (st.snake.some((p) => eq(p, nx))) continue;
+        if (st.poison && eq(st.poison, nx)) continue;
 
-    let enemySnake = [next, ...s.enemySnake];
-
-    // enemy eats food (denies you the growth)
-    const ateA = eq(next, s.foodA);
-    const ateB = eq(next, s.foodB);
-    if (ateA || ateB) {
-      // enemy pickup sound
-      sfx(enemyPickupSfxKind());
-      const tail = enemySnake[enemySnake.length - 1];
-      for (let i = 0; i < s.enemyGrowth; i++) enemySnake = [...enemySnake, { ...tail }];
-
-      // respawn only the eaten food
-      let seed = s.seed;
-      let foodA = s.foodA;
-      let foodB = s.foodB;
-      if (ateA) {
-        const ff = pickEmptyCell({ ...s, enemySnake, foodA, foodB }, seed);
-        seed = ff.seed;
-        foodA = ff.value;
-      }
-      if (ateB) {
-        const ff = pickEmptyCell({ ...s, enemySnake, foodA, foodB }, seed);
-        seed = ff.seed;
-        foodB = ff.value;
+        const sc = distManhattan(nx, target);
+        if (sc < bestScore) {
+          bestScore = sc;
+          bestDir = d;
+        }
       }
 
-      // win check: rival reaches target length
-      if (enemySnake.length >= WIN_LENGTH) {
-        queueMicrotask(() => setPhaseIfPlaying({ kind: "win", winner: "rival" }));
-        return { ...s, seed, enemySnake, enemyDir: bestDir, foodA, foodB };
+      // if no safe move found, just keep direction (may die)
+      let nx = add(head, bestDir);
+      nx = wrapIfNeeded(nx, st);
+
+      const hitWall = !inBounds(nx, st.gridW, st.gridH) || st.walls.has(key(nx));
+      const hitSelf = st.enemySnake.some((p) => eq(p, nx));
+      const hitPlayer = st.snake.some((p) => eq(p, nx));
+
+      // head-on handling (only for the first enemy step this tick)
+      if (ctxOnce) {
+        const swap = eq(nx, ctxOnce.playerPrevHead) && eq(ctxOnce.playerNext, ctxOnce.enemyPrevHead);
+        const same = eq(nx, ctxOnce.playerNext);
+        if (swap || same) {
+          queueMicrotask(() => setPhaseIfPlaying({ kind: "rps", your: null, ai: null }));
+          return st;
+        }
       }
 
-      return { ...s, seed, enemySnake, enemyDir: bestDir, foodA, foodB };
+      if (hitPlayer) {
+        addShake(10);
+        spawnBurst(head, "rgba(255, 80, 140, 0.95)", 42);
+        sfx("death");
+        queueMicrotask(() => setPhaseIfPlaying({ kind: "gameover" }));
+        return st;
+      }
+
+      if (hitWall || hitSelf) {
+        queueMicrotask(() => setPhaseIfPlaying({ kind: "win", winner: "you" }));
+        return { ...st, enemySnake: [], enemyEnabled: false };
+      }
+
+      let enemySnake = [nx, ...st.enemySnake];
+
+      // enemy eats food
+      const ateA = eq(nx, st.foodA);
+      const ateB = eq(nx, st.foodB);
+      if (ateA || ateB) {
+        sfx(enemyPickupSfxKind());
+        const tail = enemySnake[enemySnake.length - 1];
+        for (let i = 0; i < st.enemyGrowth; i++) enemySnake = [...enemySnake, { ...tail }];
+
+        // respawn only the eaten food
+        let foodA = st.foodA;
+        let foodB = st.foodB;
+        let ss = st.seed;
+        if (ateA) {
+          const ff = pickEmptyCell({ ...st, enemySnake, foodA, foodB }, ss);
+          ss = ff.seed;
+          foodA = ff.value;
+        }
+        if (ateB) {
+          const ff = pickEmptyCell({ ...st, enemySnake, foodA, foodB }, ss);
+          ss = ff.seed;
+          foodB = ff.value;
+        }
+
+        return { ...st, seed: ss, enemySnake, enemyDir: bestDir, foodA, foodB };
+      }
+
+      // normal tail move
+      enemySnake.pop();
+      return { ...st, enemySnake, enemyDir: bestDir };
+    };
+
+    let out = { ...s, seed };
+    for (let i = 0; i < steps; i++) {
+      out = moveOnce(out, i === 0 ? ctx : undefined);
+      if (!out.enemyEnabled || out.enemySnake.length < 2) break;
     }
-
-    // normal move
-    enemySnake.pop();
-
-    // win check: rival reaches target length
-    if (enemySnake.length >= WIN_LENGTH) {
-      queueMicrotask(() => setPhaseIfPlaying({ kind: "win", winner: "rival" }));
-      return { ...s, enemySnake, enemyDir: bestDir };
-    }
-
-    return { ...s, enemySnake, enemyDir: bestDir };
+    return out;
   }
 
   function tickSnake(s: GameState): GameState {
@@ -2634,7 +2787,19 @@ function App() {
       </div>
 
       {phase.kind === "playing" && (
-        <div className="touchPad">
+        <>
+          {state.inventory && state.inventory.charges > 0 && (
+            <button
+              className="useBtn"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                useActive();
+              }}
+            >
+              USE
+            </button>
+          )}
+          <div className="touchPad">
           <div />
           <button
             className="pill"
@@ -2676,7 +2841,8 @@ function App() {
           <div style={{ gridColumn: "1 / span 3", textAlign: "center", fontSize: 11, opacity: 0.8 }}>
             Tap or swipe to turn
           </div>
-        </div>
+          </div>
+        </>
       )}
 
       {/* keep a tiny element so Vite/React has a stable root */}

@@ -197,6 +197,21 @@ body,
   z-index: 300;
 }
 
+.useBtn {
+  position: fixed;
+  left: 12px;
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  z-index: 140;
+  border-radius: 16px;
+  padding: 14px 18px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  border: 1px solid rgba(80, 255, 190, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(150, 255, 210, 0.92);
+  backdrop-filter: blur(8px);
+}
+
 .touchPad {
   position: fixed;
   left: 12px;
