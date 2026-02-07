@@ -969,6 +969,7 @@ function App() {
 
   // draggable on-screen controls (saved per-device)
   const [editControls, setEditControls] = useState<boolean>(false);
+  const [controlsEditorOpen, setControlsEditorOpen] = useState<boolean>(false);
   const [controlPos, setControlPos] = useState<{
     touchPadRight: number;
     touchPadBottom: number;
@@ -2573,8 +2574,15 @@ function App() {
                 <div className="label">Touch controls</div>
                 <div className="value" style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ opacity: 0.85 }}>Drag controls to reposition</span>
-                  <button className={"pill" + (editControls ? " primary" : "")} onClick={() => setEditControls((x) => !x)}>
-                    {editControls ? "Done" : "Edit"}
+                  <button
+                    className={"pill" + (editControls ? " primary" : "")}
+                    onClick={() => {
+                      // open in-settings control editor (mock playfield)
+                      setEditControls(true);
+                      setControlsEditorOpen(true);
+                    }}
+                  >
+                    Move Controls
                   </button>
                 </div>
                 <div className="fine" style={{ marginTop: 6 }}>
@@ -2652,7 +2660,14 @@ function App() {
                 </div>
               )}
 
-              <button className="primary" onClick={() => setSettingsOpen(false)}>
+              <button
+                className="primary"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setControlsEditorOpen(false);
+                  setEditControls(false);
+                }}
+              >
                 Done
               </button>
             </div>
@@ -2838,6 +2853,127 @@ function App() {
         <div className="pill">Poison: orange ✕</div>
         <div className="pill">Walls: pink blocks</div>
       </div>
+
+
+      {settingsOpen && controlsEditorOpen && (
+        <div className="overlay" style={{ zIndex: 400 }}>
+          <div className="panel wide">
+            <h2>Move Controls</h2>
+            <div className="fine">Drag the controls where you want them. This is a mock playfield preview.</div>
+            <div className="controlsMockStage">
+              <div className="controlsMockBoard" />
+
+              {/* USE mock */}
+              <button
+                className={"useBtn edit"}
+                style={{
+                  left: controlPos.useLeft,
+                  bottom: "calc(" + controlPos.useBottom + "px + env(safe-area-inset-bottom, 0px))",
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  dragRef.current = {
+                    kind: "use",
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startLeft: controlPos.useLeft,
+                    startBottom: controlPos.useBottom,
+                  };
+                  (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  const d = dragRef.current;
+                  if (!d || d.kind !== "use") return;
+                  e.preventDefault();
+                  const dx = e.clientX - d.startX;
+                  const dy = e.clientY - d.startY;
+                  setControlPos((p) => ({
+                    ...p,
+                    useLeft: clamp((d.startLeft ?? p.useLeft) + dx, 0, window.innerWidth - 60),
+                    useBottom: clamp((d.startBottom ?? p.useBottom) - dy, 0, window.innerHeight - 60),
+                  }));
+                }}
+                onPointerUp={() => {
+                  dragRef.current = null;
+                }}
+                onPointerCancel={() => {
+                  dragRef.current = null;
+                }}
+              >
+                USE
+              </button>
+
+              {/* D-pad mock */}
+              <div
+                className={"touchPad edit"}
+                style={{
+                  right: controlPos.touchPadRight,
+                  bottom: "calc(" + controlPos.touchPadBottom + "px + env(safe-area-inset-bottom, 0px))",
+                }}
+                onPointerDown={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target && target.tagName === "BUTTON") return;
+                  e.preventDefault();
+                  dragRef.current = {
+                    kind: "touchPad",
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startRight: controlPos.touchPadRight,
+                    startBottom: controlPos.touchPadBottom,
+                  };
+                  (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  const d = dragRef.current;
+                  if (!d || d.kind !== "touchPad") return;
+                  e.preventDefault();
+                  const dx = e.clientX - d.startX;
+                  const dy = e.clientY - d.startY;
+                  setControlPos((p) => ({
+                    ...p,
+                    touchPadRight: clamp((d.startRight ?? p.touchPadRight) - dx, 0, window.innerWidth - 120),
+                    touchPadBottom: clamp((d.startBottom ?? p.touchPadBottom) - dy, 0, window.innerHeight - 120),
+                  }));
+                }}
+                onPointerUp={() => {
+                  dragRef.current = null;
+                }}
+                onPointerCancel={() => {
+                  dragRef.current = null;
+                }}
+              >
+                <div />
+                <button className="pill" onPointerDown={(e) => e.preventDefault()}>
+                  ↑
+                </button>
+                <div />
+                <button className="pill" onPointerDown={(e) => e.preventDefault()}>
+                  ←
+                </button>
+                <button className="pill" onPointerDown={(e) => e.preventDefault()}>
+                  ↓
+                </button>
+                <button className="pill" onPointerDown={(e) => e.preventDefault()}>
+                  →
+                </button>
+                <div style={{ gridColumn: "1 / span 3", textAlign: "center", fontSize: 11, opacity: 0.8 }}>
+                  Drag the pad (empty area)
+                </div>
+              </div>
+            </div>
+
+            <button
+              className="primary"
+              onClick={() => {
+                setControlsEditorOpen(false);
+                setEditControls(false);
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {phase.kind === "playing" && (
         <>

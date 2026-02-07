@@ -142,6 +142,32 @@ body,
   clip-path: inset(60% 13% 25% 13% round 18px);
 }
 
+.controlsMockStage {
+  position: relative;
+  height: min(520px, 52vh);
+  border-radius: 18px;
+  overflow: hidden;
+  margin-top: 12px;
+  background: radial-gradient(1200px 700px at 50% 30%, rgba(147, 90, 255, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 20% 80%, rgba(80, 255, 190, 0.08), transparent 55%),
+    #070a14;
+  border: 1px solid rgba(190, 160, 255, 0.12);
+}
+
+.controlsMockBoard {
+  position: absolute;
+  left: 7%;
+  top: 18%;
+  width: 86%;
+  height: 64%;
+  border: 1px solid rgba(190, 160, 255, 0.18);
+  border-radius: 12px;
+  background:
+    linear-gradient(rgba(255,255,255,0.035), rgba(255,255,255,0.015)),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 18px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 18px);
+}
+
 .gameCanvas {
   display: block;
   width: 100%;
