@@ -11,7 +11,9 @@
 
     "preview": "vite preview",
 
-    "build:pages": "VITE_DEPLOY_TARGET=pages pnpm run build:local && node scripts/postbuild-pages.mjs",
+    "build:pages:snake": "VITE_DEPLOY_TARGET=pages VITE_PAGES_BASE=ultimate-snake pnpm run build:local",
+    "build:pages:arc": "VITE_DEPLOY_TARGET=pages VITE_PAGES_BASE=ultimate-brick-breaker VITE_GAME=arc pnpm run build:local",
+    "build:pages": "pnpm run build:pages:snake && pnpm run build:pages:arc && node scripts/postbuild-pages.mjs",
     "preview:pages": "pnpm run build:pages && (cd dist && python3 -m http.server 4173)",
 
     "tauri": "bash -lc 'source $HOME/.cargo/env >/dev/null 2>&1 || true; tauri \"$@\"' --",

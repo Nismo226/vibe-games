@@ -6,18 +6,19 @@ const host = process.env.TAURI_DEV_HOST;
 
 // Build modes:
 // - default: Tauri dev/build (fixed port 1420)
-// - pages: Cloudflare Pages deploy, served under /ultimate-snake/
+// - pages: Cloudflare Pages deploy, served under /<pagesBase>/
 const isPages = process.env.VITE_DEPLOY_TARGET === "pages";
+const pagesBase = process.env.VITE_PAGES_BASE || "ultimate-snake";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
   clearScreen: false,
 
-  base: isPages ? "/ultimate-snake/" : "/",
+  base: isPages ? `/${pagesBase}/` : "/",
 
   build: {
-    outDir: isPages ? "dist/ultimate-snake" : "dist",
+    outDir: isPages ? `dist/${pagesBase}` : "dist",
     emptyOutDir: true,
   },
 
