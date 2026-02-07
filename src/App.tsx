@@ -572,6 +572,9 @@ function App() {
   type SnakeSkin = {
     presetId: string;
 
+    // rendering mode
+    sprite: "none" | "taco";
+
     // gradient along the body
     hueStart: number; // 0..360
     hueEnd: number; // 0..360
@@ -593,6 +596,7 @@ function App() {
 
   const DEFAULT_SKIN: SnakeSkin = {
     presetId: "neonClassic",
+    sprite: "none",
     hueStart: 270,
     hueEnd: 80,
     sat: 95,
@@ -610,27 +614,27 @@ function App() {
     {
       id: "toxic",
       label: "Toxic Slime",
-      skin: { ...DEFAULT_SKIN, presetId: "toxic", hueStart: 135, hueEnd: 60, sat: 98, light: 58, bloom: 0.42 },
+      skin: { ...DEFAULT_SKIN, presetId: "toxic", sprite: "none", hueStart: 135, hueEnd: 60, sat: 98, light: 58, bloom: 0.42 },
     },
     {
       id: "vapor",
       label: "Vaporwave",
-      skin: { ...DEFAULT_SKIN, presetId: "vapor", hueStart: 310, hueEnd: 190, sat: 95, light: 64, bloom: 0.48 },
+      skin: { ...DEFAULT_SKIN, presetId: "vapor", sprite: "none", hueStart: 310, hueEnd: 190, sat: 95, light: 64, bloom: 0.48 },
     },
     {
       id: "ice",
       label: "Ice",
-      skin: { ...DEFAULT_SKIN, presetId: "ice", hueStart: 200, hueEnd: 260, sat: 80, light: 70, bloom: 0.35 },
+      skin: { ...DEFAULT_SKIN, presetId: "ice", sprite: "none", hueStart: 200, hueEnd: 260, sat: 80, light: 70, bloom: 0.35 },
     },
     {
       id: "inferno",
       label: "Inferno",
-      skin: { ...DEFAULT_SKIN, presetId: "inferno", hueStart: 20, hueEnd: 330, sat: 98, light: 58, bloom: 0.5 },
+      skin: { ...DEFAULT_SKIN, presetId: "inferno", sprite: "none", hueStart: 20, hueEnd: 330, sat: 98, light: 58, bloom: 0.5 },
     },
     {
       id: "mono",
       label: "Mono",
-      skin: { ...DEFAULT_SKIN, presetId: "mono", hueStart: 0, hueEnd: 0, sat: 0, light: 75, alpha: 0.95, bloom: 0.2 },
+      skin: { ...DEFAULT_SKIN, presetId: "mono", sprite: "none", hueStart: 0, hueEnd: 0, sat: 0, light: 75, alpha: 0.95, bloom: 0.2 },
     },
   ];
 
@@ -639,7 +643,7 @@ function App() {
       const raw = localStorage.getItem("ultimateSnake_skin");
       if (!raw) return DEFAULT_SKIN;
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_SKIN, ...parsed } as SnakeSkin;
+      return { ...DEFAULT_SKIN, ...parsed, sprite: parsed.sprite || "none" } as SnakeSkin;
     } catch {
       return DEFAULT_SKIN;
     }
@@ -687,6 +691,50 @@ function App() {
   // --- Web audio fallback ---
   type WebSfxKind = SfxKind | "enemy_pickup";
   const webBaseUrl = (import.meta as any).env?.BASE_URL || "/";
+
+  // Sprite skin assets
+  const tacoSpritesRef = useRef<{
+    head: HTMLImageElement;
+    headOpen: HTMLImageElement;
+    straight: HTMLImageElement;
+    corner: HTMLImageElement;
+    tail: HTMLImageElement;
+    ready: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (tacoSpritesRef.current) return;
+
+    const mk = (src: string) => {
+      const img = new Image();
+      img.src = webBaseUrl + src;
+      return img;
+    };
+
+    const head = mk("skins/taco/head.png");
+    const headOpen = mk("skins/taco/head_open.png");
+    const straight = mk("skins/taco/straight.png");
+    const corner = mk("skins/taco/corner.png");
+    const tail = mk("skins/taco/tail.png");
+
+    const obj = { head, headOpen, straight, corner, tail, ready: false };
+    tacoSpritesRef.current = obj;
+
+    let loaded = 0;
+    const onload = () => {
+      loaded++;
+      if (loaded >= 5) {
+        obj.ready = true;
+      }
+    };
+
+    head.onload = onload;
+    headOpen.onload = onload;
+    straight.onload = onload;
+    corner.onload = onload;
+    tail.onload = onload;
+  }, [webBaseUrl]);
+
   const webSfxUrls: Record<WebSfxKind, string> = {
     eat: webBaseUrl + "sfx/eat.wav",
     boost: webBaseUrl + "sfx/boost.wav",
@@ -2291,28 +2339,93 @@ function App() {
     }
 
     // player snake (customizable)
-    for (let i = s.snake.length - 1; i >= 0; i--) {
-      const seg = s.snake[i];
-      const px = ox + seg.x * cell;
-      const py = oy + seg.y * cell;
-      const t = i / Math.max(1, s.snake.length - 1);
+    {
+      const sprites = tacoSpritesRef.current;
+      const useSprites = skin.sprite === "taco" && sprites?.ready;
 
-      const hue = skin.hueStart + (skin.hueEnd - skin.hueStart) * t;
-      ctx.fillStyle = `hsl(${hue} ${clamp(skin.sat, 0, 100)}% ${clamp(skin.light, 0, 100)}% / ${clamp(skin.alpha, 0, 1)})`;
-      const rr = i === 0 ? skin.headRound : skin.bodyRound;
-      roundedRect(ctx, px + 1, py + 1, cell - 2, cell - 2, cell * clamp(rr, 0, 0.5));
-      ctx.fill();
+      const drawImg = (img: HTMLImageElement, x: number, y: number, rot: number) => {
+        ctx.save();
+        ctx.translate(x + cell * 0.5, y + cell * 0.5);
+        ctx.rotate(rot);
+        ctx.drawImage(img, -cell * 0.5, -cell * 0.5, cell, cell);
+        ctx.restore();
+      };
 
-      if (i === 0 && skin.eyesOn) {
-        // eyes
-        ctx.fillStyle = "rgba(10, 10, 20, 0.7)";
-        const ex = px + cell * 0.35;
-        const ey = py + cell * 0.35;
-        const eyeR = cell * 0.08 * clamp(skin.eyeSize, 0.6, 2.0);
-        ctx.beginPath();
-        ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
-        ctx.arc(px + cell * 0.65, ey, eyeR, 0, Math.PI * 2);
+      const dirTo = (a: Vec, b: Vec): Vec => ({ x: clamp(b.x - a.x, -1, 1), y: clamp(b.y - a.y, -1, 1) });
+      const rotForDir = (d: Vec) => {
+        // base sprite faces RIGHT
+        if (d.x === 1) return 0;
+        if (d.x === -1) return Math.PI;
+        if (d.y === 1) return Math.PI / 2;
+        return -Math.PI / 2;
+      };
+
+      for (let i = s.snake.length - 1; i >= 0; i--) {
+        const seg = s.snake[i];
+        const px = ox + seg.x * cell;
+        const py = oy + seg.y * cell;
+
+        if (useSprites && sprites) {
+          // Determine tile based on neighbors
+          const prev = i > 0 ? s.snake[i - 1] : null; // toward head
+          const next = i < s.snake.length - 1 ? s.snake[i + 1] : null; // toward tail
+
+          if (!prev && next) {
+            // head
+            const d = dirTo(seg, next);
+            drawImg(sprites.head, px, py, rotForDir({ x: -d.x, y: -d.y }));
+          } else if (prev && !next) {
+            // tail
+            const d = dirTo(seg, prev);
+            drawImg(sprites.tail, px, py, rotForDir(d));
+          } else if (prev && next) {
+            const d1 = dirTo(seg, prev);
+            const d2 = dirTo(seg, next);
+            const straight = (d1.x === -d2.x && d1.y === -d2.y);
+
+            if (straight) {
+              const rot = d1.x !== 0 ? 0 : Math.PI / 2;
+              drawImg(sprites.straight, px, py, rot);
+            } else {
+              // corner: assume corner sprite is a RIGHT->DOWN turn in its base orientation
+              // Rotate based on which two dirs are present.
+              const hasR = d1.x === 1 || d2.x === 1;
+              const hasL = d1.x === -1 || d2.x === -1;
+              const hasD = d1.y === 1 || d2.y === 1;
+              const hasU = d1.y === -1 || d2.y === -1;
+
+              let rot = 0;
+              if (hasR && hasD) rot = 0;
+              else if (hasD && hasL) rot = Math.PI / 2;
+              else if (hasL && hasU) rot = Math.PI;
+              else if (hasU && hasR) rot = -Math.PI / 2;
+
+              drawImg(sprites.corner, px, py, rot);
+            }
+          } else {
+            drawImg(sprites.straight, px, py, 0);
+          }
+
+          continue;
+        }
+
+        const t = i / Math.max(1, s.snake.length - 1);
+        const hue = skin.hueStart + (skin.hueEnd - skin.hueStart) * t;
+        ctx.fillStyle = `hsl(${hue} ${clamp(skin.sat, 0, 100)}% ${clamp(skin.light, 0, 100)}% / ${clamp(skin.alpha, 0, 1)})`;
+        const rr = i === 0 ? skin.headRound : skin.bodyRound;
+        roundedRect(ctx, px + 1, py + 1, cell - 2, cell - 2, cell * clamp(rr, 0, 0.5));
         ctx.fill();
+
+        if (i === 0 && skin.eyesOn) {
+          ctx.fillStyle = "rgba(10, 10, 20, 0.7)";
+          const ex = px + cell * 0.35;
+          const ey = py + cell * 0.35;
+          const eyeR = cell * 0.08 * clamp(skin.eyeSize, 0.6, 2.0);
+          ctx.beginPath();
+          ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
+          ctx.arc(px + cell * 0.65, ey, eyeR, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
@@ -2638,6 +2751,12 @@ function App() {
                       {p.label}
                     </button>
                   ))}
+                  <button
+                    className={"pill" + (skin.sprite === "taco" ? " primary" : "")}
+                    onClick={() => setSkin((s) => ({ ...s, presetId: "taco", sprite: "taco" }))}
+                  >
+                    Taco
+                  </button>
                 </div>
               </div>
 
