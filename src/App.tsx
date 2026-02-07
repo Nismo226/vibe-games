@@ -301,7 +301,7 @@ function initialState(bestScore: number): GameState {
     timeLeftMs: ROUND_MS,
     bestScore,
 
-    speed: 8, // a touch slower at baseline
+    speed: 5, // baseline speed (mobile-friendly)
     baseGrowth: 1,
     scoreMult: 1,
     magnetRadius: 0,
@@ -966,6 +966,39 @@ function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const skinPreviewRef = useRef<HTMLCanvasElement | null>(null);
+
+  // draggable on-screen controls (saved per-device)
+  const [editControls, setEditControls] = useState<boolean>(false);
+  const [controlPos, setControlPos] = useState<{
+    touchPadRight: number;
+    touchPadBottom: number;
+    useLeft: number;
+    useBottom: number;
+  }>(() => {
+    try {
+      const raw = localStorage.getItem("ultimateSnake_controlPos");
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { touchPadRight: 12, touchPadBottom: 150, useLeft: 12, useBottom: 150 };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ultimateSnake_controlPos", JSON.stringify(controlPos));
+    } catch {}
+  }, [controlPos]);
+
+  const dragRef = useRef<
+    | null
+    | {
+        kind: "touchPad" | "use";
+        startX: number;
+        startY: number;
+        startRight?: number;
+        startBottom?: number;
+        startLeft?: number;
+      }
+  >(null);
 
   useEffect(() => {
     if (phase.kind === "startperk" || phase.kind === "upgrade" || phase.kind === "gameover" || phase.kind === "win") {
@@ -2026,8 +2059,11 @@ function App() {
     const parent = c.parentElement;
     if (!parent) return;
     const rect = parent.getBoundingClientRect();
-    // Cap DPR to keep performance reasonable (especially when window is maximized on a VM)
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    // Cap DPR to keep performance reasonable (especially when window is maximized)
+    // Large canvases are expensive; keep DPR low.
+    const area = rect.width * rect.height;
+    const dprCap = area > 900_000 ? 1.0 : 1.25;
+    const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     const w = Math.floor(rect.width * dpr);
     const h = Math.floor(rect.height * dpr);
     if (c.width !== w || c.height !== h) {
@@ -2047,10 +2083,13 @@ function App() {
 
     const s = stateRef.current;
 
+    const perfScale = clamp(900_000 / Math.max(1, w * h), 0.25, 1);
+
     // subtle stars
-    ctx.globalAlpha = 0.25;
+    ctx.globalAlpha = 0.25 * perfScale;
     ctx.fillStyle = "#cdd6ff";
-    for (let i = 0; i < 80; i++) {
+    const starCount = Math.floor(60 * perfScale);
+    for (let i = 0; i < starCount; i++) {
       const x = ((s.seed + i * 977) % 1000) / 1000;
       const y = ((s.seed + i * 571) % 1000) / 1000;
       ctx.fillRect(Math.floor(x * w), Math.floor(y * h), 1, 1);
@@ -2291,9 +2330,9 @@ function App() {
     // cheap bloom: blur + screen composite
     {
       ctx.save();
-      const blurPx = Math.max(4, Math.floor(cell * 0.22));
+      const blurPx = Math.max(3, Math.floor(cell * 0.18));
       ctx.globalCompositeOperation = "screen";
-      ctx.globalAlpha = clamp(skin.bloom, 0, 1);
+      ctx.globalAlpha = clamp(skin.bloom, 0, 1) * perfScale;
       ctx.filter = `blur(${blurPx}px)`;
       ctx.drawImage(c, 0, 0);
       ctx.filter = "none";
@@ -2309,9 +2348,10 @@ function App() {
       ctx.fillStyle = vg;
       ctx.fillRect(0, 0, w, h);
 
-      ctx.globalAlpha = 0.07;
+      ctx.globalAlpha = 0.05 * perfScale;
       ctx.fillStyle = "#ffffff";
-      for (let i = 0; i < 220; i++) {
+      const grain = Math.floor(120 * perfScale);
+      for (let i = 0; i < grain; i++) {
         const x = Math.random() * w;
         const y = Math.random() * h;
         ctx.fillRect(x, y, 1, 1);
@@ -2526,6 +2566,19 @@ function App() {
                 <div className="label">Snake preview</div>
                 <div className="value" style={{ marginTop: 8 }}>
                   <canvas className="skinPreview" ref={skinPreviewRef} width={560} height={120} />
+                </div>
+              </div>
+
+              <div className="stat" style={{ marginTop: 10 }}>
+                <div className="label">Touch controls</div>
+                <div className="value" style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ opacity: 0.85 }}>Drag controls to reposition</span>
+                  <button className={"pill" + (editControls ? " primary" : "")} onClick={() => setEditControls((x) => !x)}>
+                    {editControls ? "Done" : "Edit"}
+                  </button>
+                </div>
+                <div className="fine" style={{ marginTop: 6 }}>
+                  Tip: while editing, drag the D-pad by its empty area. Drag USE by grabbing the button.
                 </div>
               </div>
 
@@ -2790,16 +2843,90 @@ function App() {
         <>
           {state.inventory && state.inventory.charges > 0 && (
             <button
-              className="useBtn"
+              className={"useBtn" + (editControls ? " edit" : "")}
+              style={{
+                left: controlPos.useLeft,
+                bottom: `calc(${controlPos.useBottom}px + env(safe-area-inset-bottom, 0px))`,
+              }}
               onPointerDown={(e) => {
+                if (editControls) {
+                  e.preventDefault();
+                  dragRef.current = {
+                    kind: "use",
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startLeft: controlPos.useLeft,
+                    startBottom: controlPos.useBottom,
+                  };
+                  (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+                  return;
+                }
                 e.preventDefault();
                 useActive();
+              }}
+              onPointerMove={(e) => {
+                const d = dragRef.current;
+                if (!d || d.kind !== "use") return;
+                e.preventDefault();
+                const dx = e.clientX - d.startX;
+                const dy = e.clientY - d.startY;
+                setControlPos((p) => ({
+                  ...p,
+                  useLeft: clamp((d.startLeft ?? p.useLeft) + dx, 0, window.innerWidth - 60),
+                  useBottom: clamp((d.startBottom ?? p.useBottom) - dy, 0, window.innerHeight - 60),
+                }));
+              }}
+              onPointerUp={() => {
+                dragRef.current = null;
+              }}
+              onPointerCancel={() => {
+                dragRef.current = null;
               }}
             >
               USE
             </button>
           )}
-          <div className="touchPad">
+
+          <div
+            className={"touchPad" + (editControls ? " edit" : "")}
+            style={{
+              right: controlPos.touchPadRight,
+              bottom: `calc(${controlPos.touchPadBottom}px + env(safe-area-inset-bottom, 0px))`,
+            }}
+            onPointerDown={(e) => {
+              if (!editControls) return;
+              // only start dragging when touching empty area (not buttons)
+              const target = e.target as HTMLElement;
+              if (target && target.tagName === "BUTTON") return;
+              e.preventDefault();
+              dragRef.current = {
+                kind: "touchPad",
+                startX: e.clientX,
+                startY: e.clientY,
+                startRight: controlPos.touchPadRight,
+                startBottom: controlPos.touchPadBottom,
+              };
+              (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              const d = dragRef.current;
+              if (!d || d.kind !== "touchPad") return;
+              e.preventDefault();
+              const dx = e.clientX - d.startX;
+              const dy = e.clientY - d.startY;
+              setControlPos((p) => ({
+                ...p,
+                touchPadRight: clamp((d.startRight ?? p.touchPadRight) - dx, 0, window.innerWidth - 120),
+                touchPadBottom: clamp((d.startBottom ?? p.touchPadBottom) - dy, 0, window.innerHeight - 120),
+              }));
+            }}
+            onPointerUp={() => {
+              dragRef.current = null;
+            }}
+            onPointerCancel={() => {
+              dragRef.current = null;
+            }}
+          >
           <div />
           <button
             className="pill"

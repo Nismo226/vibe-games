@@ -224,6 +224,16 @@ body,
   opacity: 0.94;
 }
 
+.touchPad.edit {
+  outline: 2px dashed rgba(80, 255, 190, 0.55);
+  outline-offset: 6px;
+}
+
+.useBtn.edit {
+  outline: 2px dashed rgba(80, 255, 190, 0.55);
+  outline-offset: 6px;
+}
+
 .touchPad .pill {
   font-size: 18px;
   padding: 0;
