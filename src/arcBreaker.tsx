@@ -100,7 +100,12 @@ export function ArcBreaker() {
     coreHp: number;
     vulnMs: number; // remaining vulnerable window
     parts: { kind: "anchor" | "core"; x: number; y: number; w: number; h: number; hp: number }[];
-  }>({ active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [] });
+
+    // attack: shield sweep (telegraphed)
+    sweepX: number; // normalized center
+    sweepV: number;
+    sweepWarnMs: number;
+  }>({ active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [], sweepX: 0.5, sweepV: 0.25, sweepWarnMs: 0 });
 
   const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(3, window.devicePixelRatio || 1)) : 1;
 
@@ -153,7 +158,7 @@ export function ArcBreaker() {
     laserTickMsRef.current = 0;
     powerSpawnMsRef.current = 0;
 
-    bossRef.current = { active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [] };
+    bossRef.current = { active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [], sweepX: 0.5, sweepV: 0.25, sweepWarnMs: 0 };
 
     const bricks: Brick[] = [];
     const cols = 9;
@@ -205,6 +210,9 @@ export function ArcBreaker() {
       coreHp: 36,
       vulnMs: 0,
       parts,
+      sweepX: 0.5,
+      sweepV: 0.34,
+      sweepWarnMs: 1200,
     };
   }
 
@@ -692,19 +700,52 @@ export function ArcBreaker() {
         }
       }
 
-      // boss parts (phase scaffolding)
+      // boss parts + attacks (phase scaffolding)
       {
         const boss = bossRef.current;
         if (boss.active) {
           boss.vulnMs = Math.max(0, boss.vulnMs - dt * 1000);
 
+          // shield sweep telegraph -> active
+          boss.sweepWarnMs = Math.max(0, boss.sweepWarnMs - dt * 1000);
+          if (boss.sweepWarnMs <= 0) {
+            boss.sweepX += boss.sweepV * dt;
+            if (boss.sweepX < 0.08) {
+              boss.sweepX = 0.08;
+              boss.sweepV *= -1;
+              boss.sweepWarnMs = 650; // brief telegraph on direction change
+            }
+            if (boss.sweepX > 0.92) {
+              boss.sweepX = 0.92;
+              boss.sweepV *= -1;
+              boss.sweepWarnMs = 650;
+            }
+
+            // collision: a thin vertical barrier in the upper arena
+            const wallX0 = boss.sweepX - 0.012;
+            const wallX1 = boss.sweepX + 0.012;
+            const wallY0 = 0.06;
+            const wallY1 = 0.62;
+            for (const b of ballsRef.current) {
+              if (b.x + b.r >= wallX0 && b.x - b.r <= wallX1 && b.y >= wallY0 && b.y <= wallY1) {
+                b.vx *= -1;
+                b.spin = clamp(b.spin + boss.sweepV * 1.4, -3, 3);
+                screenShakeRef.current = Math.max(screenShakeRef.current, 0.35);
+                sfx("hit");
+              }
+            }
+          }
+
           const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
           if (!anchorsAlive && boss.phase === 1) {
             boss.phase = 2;
             boss.vulnMs = 4500;
+            slowmoMsRef.current = Math.max(slowmoMsRef.current, 120);
+            sfx("power");
           }
           if (boss.phase === 2 && boss.vulnMs <= 0) {
             boss.phase = 1;
+            boss.sweepWarnMs = Math.max(boss.sweepWarnMs, 650);
             for (const p of boss.parts) {
               if (p.kind === "anchor") p.hp = Math.max(p.hp, 3);
             }
@@ -743,6 +784,7 @@ export function ArcBreaker() {
                     boss.active = false;
                     modeRef.current = "win";
                     stageClearMsRef.current = 0;
+                    slowmoMsRef.current = Math.max(slowmoMsRef.current, 140);
                     sfx("win");
                   }
                 }
@@ -761,12 +803,18 @@ export function ArcBreaker() {
         }
       }
 
-      // fail/reset (any ball falls)
-      for (const b of ballsRef.current) {
+      // lose balls (multiball friendly)
+      for (let i = 0; i < ballsRef.current.length; i++) {
+        const b = ballsRef.current[i];
         if (b.y - b.r > 1.05) {
-          reset();
-          break;
+          ballsRef.current.splice(i, 1);
+          i--;
+          screenShakeRef.current = Math.max(screenShakeRef.current, 0.7);
+          sfx("break");
         }
+      }
+      if (ballsRef.current.length === 0) {
+        reset();
       }
 
       // draw
@@ -849,6 +897,29 @@ export function ArcBreaker() {
       // boss render (Warden Prism scaffolding)
       const boss2 = bossRef.current;
       if (boss2.active) {
+        // sweep telegraph / barrier
+        {
+          const x = arena.x + boss2.sweepX * arena.w;
+          const y0 = arena.y + 0.06 * arena.h;
+          const y1 = arena.y + 0.62 * arena.h;
+          if (boss2.sweepWarnMs > 0) {
+            ctx.strokeStyle = "rgba(255,90,200,0.35)";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 6]);
+            ctx.beginPath();
+            ctx.moveTo(x, y0);
+            ctx.lineTo(x, y1);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else {
+            ctx.strokeStyle = "rgba(255,90,200,0.55)";
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(x, y0);
+            ctx.lineTo(x, y1);
+            ctx.stroke();
+          }
+        }
         // subtle backdrop
         ctx.fillStyle = "rgba(80,200,255,0.04)";
         ctx.fillRect(arena.x, arena.y, arena.w, arena.h * 0.42);
@@ -984,6 +1055,18 @@ export function ArcBreaker() {
       ctx.fillRect(px - pw / 2, py - 8, pw, 16);
       ctx.fillStyle = effectsRef.current.laserMs > 0 ? "rgba(255,90,200,0.45)" : "rgba(80,200,255,0.35)";
       ctx.fillRect(px - pw / 2, py - 8, pw, 3);
+
+      // charge indicator (ring)
+      {
+        const c = chargeRef.current;
+        if (c > 0.02) {
+          ctx.strokeStyle = c > 0.65 ? "rgba(255,200,120,0.75)" : "rgba(120,220,255,0.35)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(px, py, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * c);
+          ctx.stroke();
+        }
+      }
 
       // balls (reactor glow + state)
       {
