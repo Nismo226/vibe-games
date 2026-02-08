@@ -133,6 +133,9 @@ export function ArcBreaker() {
   const laserTickMsRef = useRef(0);
   const powerSpawnMsRef = useRef(0);
 
+  // laser visuals should stop at first hit
+  const laserEndYRef = useRef<number | null>(null); // normalized arena y (0..1), null => full length
+
   // expressive spin + charge system
   const paddleVelRef = useRef(0);
   const chargeRef = useRef(0); // 0..1
@@ -432,7 +435,10 @@ export function ArcBreaker() {
       laserTickMsRef.current = Math.max(0, laserTickMsRef.current - dt * 1000);
       powerSpawnMsRef.current = Math.max(0, powerSpawnMsRef.current - dt * 1000);
       if (fx.dmgMs <= 0) fx.dmgMult = 1;
-      if (fx.laserMs <= 0) laserTickMsRef.current = 0;
+      if (fx.laserMs <= 0) {
+        laserTickMsRef.current = 0;
+        laserEndYRef.current = null;
+      }
 
       // widen paddle if active
       paddleRef.current.w = fx.wideMs > 0 ? 0.30 : 0.22;
@@ -731,6 +737,7 @@ export function ArcBreaker() {
           }
 
           if (bestI >= 0) {
+            laserEndYRef.current = bestY; // stop beam at the hit
             const br = bricksRef.current[bestI];
             br.hp -= 1;
             if (br.hp <= 0) {
@@ -744,7 +751,7 @@ export function ArcBreaker() {
         const boss = bossRef.current;
         if (boss.active) {
           // Laser should behave like it hits the first thing in line.
-          // Priority: closest anchor at this x, else main shield, else core.
+          // Priority: closest anchor at this x, else main shield (if active), else core.
           let did = false;
 
           // anchors (pick closest to paddle)
@@ -761,6 +768,10 @@ export function ArcBreaker() {
             }
           }
           if (best) {
+            // stop beam at bottom of bubble/body
+            const endY = best.y + best.h * 0.5 + 0.12;
+            laserEndYRef.current = Math.min(laserEndYRef.current ?? 1, endY);
+
             if (best.shieldHp > 0) best.shieldHp = Math.max(0, best.shieldHp - 1);
             else best.hp -= 1;
             scoreRef.current += 1;
@@ -769,18 +780,30 @@ export function ArcBreaker() {
 
           const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
 
-          // main shield
-          if (!did && !anchorsAlive && boss.bossShieldHp > 0) {
+          // main shield (only when phase>=2, i.e., after anchors are down)
+          if (!did && !anchorsAlive && boss.phase >= 2 && boss.bossShieldHp > 0) {
+            // stop beam at bubble intersection
+            const cx = 0.5;
+            const cy = 0.24;
+            const rr = 0.30;
+            const dx = lx - cx;
+            const disc = rr * rr - dx * dx;
+            if (disc > 0) {
+              const yHit = cy + Math.sqrt(disc);
+              laserEndYRef.current = Math.min(laserEndYRef.current ?? 1, yHit);
+            }
+
             boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
             scoreRef.current += 1;
             did = true;
           }
 
           // core
-          if (!did && !anchorsAlive && boss.bossShieldHp <= 0) {
+          if (!did && !anchorsAlive && boss.phase >= 2 && boss.bossShieldHp <= 0) {
             for (const part of boss.parts) {
               if (part.kind !== "core" || part.hp <= 0) continue;
               if (lx >= part.x && lx <= part.x + part.w) {
+                laserEndYRef.current = Math.min(laserEndYRef.current ?? 1, part.y + part.h);
                 part.hp -= 1;
                 boss.coreHp = part.hp;
                 scoreRef.current += 1;
@@ -1317,7 +1340,8 @@ export function ArcBreaker() {
         // main boss bubble shield (sprite)
         {
           const shieldImg = spr.shieldBossAlt && spr.shieldBossAlt.complete ? spr.shieldBossAlt : spr.shieldBoss;
-          if (spritesReady && boss2.bossShieldHp > 0 && shieldImg && shieldImg.complete) {
+          // only show main shield after anchors are down (phase>=2)
+          if (spritesReady && boss2.phase >= 2 && boss2.bossShieldHp > 0 && shieldImg && shieldImg.complete) {
             const cx = arena.x + 0.5 * arena.w;
             const cy = arena.y + 0.24 * arena.h;
             const rr = arena.w * 0.30;
@@ -1452,7 +1476,10 @@ export function ArcBreaker() {
         const age = clamp((total - effectsRef.current.laserMs) / 140, 0, 1); // quick ramp-in
         const yStart = arena.y + arena.h * 0.92;
         const yEndFull = arena.y + arena.h * 0.02;
-        const yEnd = yStart + (yEndFull - yStart) * age;
+        const endNorm = laserEndYRef.current;
+        const yEndHit = endNorm == null ? yEndFull : arena.y + endNorm * arena.h;
+        const yEndTarget = Math.min(yStart, Math.max(yEndFull, yEndHit));
+        const yEnd = yStart + (yEndTarget - yStart) * age;
 
         const pulse = 0.5 + 0.5 * Math.sin(t * 18);
         const wobble = Math.sin(t * 9) * 1.5;
