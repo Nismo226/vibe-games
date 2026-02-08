@@ -55,9 +55,15 @@ export function ArcBreaker() {
     anchor?: HTMLImageElement;
     shieldAnchor?: HTMLImageElement;
     shieldBoss?: HTMLImageElement;
+    shieldBossAlt?: HTMLImageElement;
     crackLight?: HTMLImageElement;
     crackHeavy?: HTMLImageElement;
     tether?: HTMLImageElement;
+    gearRing?: HTMLImageElement;
+    energyNodes?: HTMLImageElement;
+    ringImpact?: HTMLImageElement;
+    burstAnchor?: HTMLImageElement;
+    burstShieldBreak?: HTMLImageElement;
   }>({ loaded: false });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -75,9 +81,15 @@ export function ArcBreaker() {
       anchor: mk("/arc-breaker/boss/anchor.png"),
       shieldAnchor: mk("/arc-breaker/boss/shield_anchor.png"),
       shieldBoss: mk("/arc-breaker/boss/shield_boss.png"),
+      shieldBossAlt: mk("/arc-breaker/boss/shield_boss_alt.png"),
       crackLight: mk("/arc-breaker/boss/crack_light.png"),
       crackHeavy: mk("/arc-breaker/boss/crack_heavy.png"),
       tether: mk("/arc-breaker/boss/tether.png"),
+      gearRing: mk("/arc-breaker/boss/gear_ring.png"),
+      energyNodes: mk("/arc-breaker/boss/energy_nodes.png"),
+      ringImpact: mk("/arc-breaker/boss/ring_impact.png"),
+      burstAnchor: mk("/arc-breaker/boss/burst_anchor.png"),
+      burstShieldBreak: mk("/arc-breaker/boss/burst_shield_break.png"),
     };
   };
   const [size, setSize] = useState({ w: 390, h: 844 });
@@ -1224,21 +1236,24 @@ export function ArcBreaker() {
         }
 
         // main boss bubble shield (sprite)
-        if (boss2.bossShieldHp > 0 && spr.shieldBoss && spr.shieldBoss.complete) {
-          const cx = arena.x + 0.5 * arena.w;
-          const cy = arena.y + 0.24 * arena.h;
-          const rr = arena.w * 0.30;
-          const a = clamp(boss2.bossShieldHp / Math.max(1, boss2.bossShieldMax), 0, 1);
-          ctx.globalAlpha = 0.65 + 0.25 * a;
-          ctx.drawImage(spr.shieldBoss, cx - rr, cy - rr, rr * 2, rr * 2);
+        {
+          const shieldImg = spr.shieldBossAlt && spr.shieldBossAlt.complete ? spr.shieldBossAlt : spr.shieldBoss;
+          if (boss2.bossShieldHp > 0 && shieldImg && shieldImg.complete) {
+            const cx = arena.x + 0.5 * arena.w;
+            const cy = arena.y + 0.24 * arena.h;
+            const rr = arena.w * 0.30;
+            const a = clamp(boss2.bossShieldHp / Math.max(1, boss2.bossShieldMax), 0, 1);
+            ctx.globalAlpha = 0.65 + 0.25 * a;
+            ctx.drawImage(shieldImg, cx - rr, cy - rr, rr * 2, rr * 2);
 
-          // crack overlay based on remaining HP
-          const crack = a < 0.34 ? spr.crackHeavy : a < 0.67 ? spr.crackLight : undefined;
-          if (crack && crack.complete) {
-            ctx.globalAlpha = 0.35 + 0.35 * (1 - a);
-            ctx.drawImage(crack, cx - rr, cy - rr, rr * 2, rr * 2);
+            // crack overlay based on remaining HP
+            const crack = a < 0.34 ? spr.crackHeavy : a < 0.67 ? spr.crackLight : undefined;
+            if (crack && crack.complete) {
+              ctx.globalAlpha = 0.35 + 0.35 * (1 - a);
+              ctx.drawImage(crack, cx - rr, cy - rr, rr * 2, rr * 2);
+            }
+            ctx.globalAlpha = 1;
           }
-          ctx.globalAlpha = 1;
         }
 
         // anchors + their bubble shields (sprites)
@@ -1266,15 +1281,32 @@ export function ArcBreaker() {
           }
         }
 
-        // boss core (sprite)
-        if (spr.core && spr.core.complete) {
+        // boss core (layered sprites)
+        {
           const cx = arena.x + 0.5 * arena.w;
           const cy = arena.y + 0.24 * arena.h;
-          const rr = arena.w * 0.16;
           const exposed = boss2.phase >= 2 && boss2.bossShieldHp <= 0;
-          ctx.globalAlpha = exposed ? 1 : 0.85;
-          ctx.drawImage(spr.core, cx - rr, cy - rr, rr * 2, rr * 2);
-          ctx.globalAlpha = 1;
+
+          if (spr.gearRing && spr.gearRing.complete) {
+            const rr = arena.w * 0.185;
+            ctx.globalAlpha = exposed ? 1 : 0.8;
+            ctx.drawImage(spr.gearRing, cx - rr, cy - rr, rr * 2, rr * 2);
+            ctx.globalAlpha = 1;
+          }
+
+          if (spr.energyNodes && spr.energyNodes.complete) {
+            const rr = arena.w * 0.14;
+            ctx.globalAlpha = 0.85;
+            ctx.drawImage(spr.energyNodes, cx - rr, cy - rr, rr * 2, rr * 2);
+            ctx.globalAlpha = 1;
+          }
+
+          if (spr.core && spr.core.complete) {
+            const rr = arena.w * 0.16;
+            ctx.globalAlpha = exposed ? 1 : 0.85;
+            ctx.drawImage(spr.core, cx - rr, cy - rr, rr * 2, rr * 2);
+            ctx.globalAlpha = 1;
+          }
         }
 
         // boss status text
