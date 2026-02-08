@@ -58,8 +58,10 @@ export function ArcBreaker() {
   // sim state (refs so we can run in rAF)
   const paddleRef = useRef({ x: 0.5, w: 0.22 }); // normalized 0..1, width as fraction of arena width
 
-  type Ball = { x: number; y: number; vx: number; vy: number; r: number; spin: number };
-  const ballsRef = useRef<Ball[]>([{ x: 0.5, y: 0.72, vx: 0.25, vy: -0.55, r: 0.018, spin: 0 }]);
+  type Ball = { x: number; y: number; vx: number; vy: number; r: number; spin: number; baseSp: number };
+  const ballsRef = useRef<Ball[]>([
+    { x: 0.5, y: 0.72, vx: 0.25, vy: -0.55, r: 0.018, spin: 0, baseSp: 0.62 },
+  ]);
 
   const bricksRef = useRef<Brick[]>([]);
   const scoreRef = useRef(0);
@@ -165,7 +167,7 @@ export function ArcBreaker() {
 
   function reset() {
     paddleRef.current = { x: 0.5, w: 0.22 };
-    ballsRef.current = [{ x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018, spin: 0 }];
+    ballsRef.current = [{ x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018, spin: 0, baseSp: 0.64 }];
     scoreRef.current = 0;
 
     particlesRef.current = [];
@@ -216,7 +218,7 @@ export function ArcBreaker() {
   function startBoss() {
     // Warden Prism (first end-of-run boss): break anchors → expose core windows → finish.
     paddleRef.current = { x: 0.5, w: 0.22 };
-    ballsRef.current = [{ x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018, spin: 0 }];
+    ballsRef.current = [{ x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018, spin: 0, baseSp: 0.66 }];
     scoreRef.current = 0;
 
     particlesRef.current = [];
@@ -470,6 +472,15 @@ export function ArcBreaker() {
         b.vx = clamp(b.vx + curve * dt, -1.2, 1.2);
         b.spin *= Math.pow(0.995, dt * 60);
 
+        // return-to-normal speed when boss is not angry
+        const sp = Math.hypot(b.vx, b.vy);
+        const normalMax = 0.88;
+        if (!bossRef.current.angry && sp > normalMax) {
+          const k = 0.975;
+          b.vx *= k;
+          b.vy *= k;
+        }
+
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         trailRef.current.push({ x: b.x, y: b.y, life: 160 });
@@ -613,7 +624,7 @@ export function ArcBreaker() {
             } else if (pu.kind === "multiball") {
               // spawn extra balls immediately (visible effect)
               fx.multiballMs = 8_000;
-              const base = ballsRef.current[0] || { x: p.x, y: 0.86, vx: 0.2, vy: -0.6, r: 0.018, spin: 0 };
+              const base = ballsRef.current[0] || { x: p.x, y: 0.86, vx: 0.2, vy: -0.6, r: 0.018, spin: 0, baseSp: 0.64 };
               const mk = (ang: number) => {
                 const sp = Math.max(0.55, Math.hypot(base.vx, base.vy));
                 return {
@@ -623,6 +634,7 @@ export function ArcBreaker() {
                   vy: -Math.abs(Math.sin(ang)) * sp,
                   r: base.r,
                   spin: base.spin,
+                  baseSp: sp,
                 };
               };
               // cap to avoid chaos/perf issues
@@ -674,7 +686,7 @@ export function ArcBreaker() {
         // boss anchors + boss shield/core
         const boss = bossRef.current;
         if (boss.active) {
-          // anchors: strip shield first
+          // anchors: strip shield first (and reflect beam hits as impacts)
           for (const part of boss.parts) {
             if (part.kind !== "anchor" || part.hp <= 0) continue;
             if (lx >= part.x && lx <= part.x + part.w) {
@@ -688,8 +700,9 @@ export function ArcBreaker() {
             }
           }
 
-          // main boss shield (after anchors are down)
           const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
+
+          // main boss shield (after anchors are down)
           if (!anchorsAlive && boss.bossShieldHp > 0) {
             boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
             scoreRef.current += 1;
@@ -705,6 +718,81 @@ export function ArcBreaker() {
                 scoreRef.current += 1;
                 break;
               }
+            }
+          }
+
+          // physical shield collision (ball bounces off the bubble)
+          //  - anchor bubbles
+          for (const b of ballsRef.current) {
+            for (const part of boss.parts) {
+              if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
+              const cx = part.x + part.w * 0.5;
+              const cy = part.y + part.h * 0.5;
+              const rr = Math.max(part.w, part.h) * 0.72;
+              const dx = b.x - cx;
+              const dy = b.y - cy;
+              const d = Math.hypot(dx, dy);
+              if (d > 0 && d < rr + b.r) {
+                // push out
+                const nx = dx / d;
+                const ny = dy / d;
+                b.x = cx + nx * (rr + b.r);
+                b.y = cy + ny * (rr + b.r);
+                // reflect
+                const dot = b.vx * nx + b.vy * ny;
+                b.vx -= 2 * dot * nx;
+                b.vy -= 2 * dot * ny;
+                b.spin = clamp(b.spin + nx * 1.1, -3, 3);
+              }
+            }
+
+            // main boss bubble
+            if (boss.phase >= 2 && boss.bossShieldHp > 0) {
+              const cx = 0.5;
+              const cy = 0.24;
+              const rr = 0.26;
+              const dx = b.x - cx;
+              const dy = b.y - cy;
+              const d = Math.hypot(dx, dy);
+              if (d > 0 && d < rr + b.r) {
+                const nx = dx / d;
+                const ny = dy / d;
+                b.x = cx + nx * (rr + b.r);
+                b.y = cy + ny * (rr + b.r);
+                const dot = b.vx * nx + b.vy * ny;
+                b.vx -= 2 * dot * nx;
+                b.vy -= 2 * dot * ny;
+                b.spin = clamp(b.spin + nx * 1.2, -3, 3);
+              }
+            }
+          }
+
+          // missiles should also "hit" shields (pop early)
+          for (let mi = 0; mi < missilesRef.current.length; mi++) {
+            const m = missilesRef.current[mi];
+            let hitShield = false;
+            for (const part of boss.parts) {
+              if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
+              const cx = part.x + part.w * 0.5;
+              const cy = part.y + part.h * 0.5;
+              const rr = Math.max(part.w, part.h) * 0.72;
+              const d = Math.hypot(m.x - cx, m.y - cy);
+              if (d < rr) {
+                part.shieldHp = Math.max(0, part.shieldHp - 1);
+                hitShield = true;
+                break;
+              }
+            }
+            if (!hitShield && boss.phase >= 2 && boss.bossShieldHp > 0) {
+              const d = Math.hypot(m.x - 0.5, m.y - 0.24);
+              if (d < 0.26) {
+                boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
+                hitShield = true;
+              }
+            }
+            if (hitShield) {
+              missilesRef.current.splice(mi, 1);
+              mi--;
             }
           }
         }
@@ -828,12 +916,14 @@ export function ArcBreaker() {
                 if (b.x + b.r >= wallX0 && b.x - b.r <= wallX1 && b.y >= wallY0 && b.y <= wallY1) {
                   b.vx *= -1;
                   const sp = Math.hypot(b.vx, b.vy);
-                  const boost = 1.18;
+                  const boost = 1.03; // noticeable but not insane
                   const ns = Math.max(0.0001, Math.hypot(b.vx, b.vy));
-                  b.vx = (b.vx / ns) * sp * boost;
-                  b.vy = (b.vy / ns) * sp * boost;
-                  b.spin = clamp(b.spin + boss.sweepV * 1.8, -3, 3);
-                  screenShakeRef.current = Math.max(screenShakeRef.current, 0.45);
+                  const angryMax = 0.98;
+                  const sp2 = Math.min(angryMax, sp * boost);
+                  b.vx = (b.vx / ns) * sp2;
+                  b.vy = (b.vy / ns) * sp2;
+                  b.spin = clamp(b.spin + boss.sweepV * 1.2, -3, 3);
+                  screenShakeRef.current = Math.max(screenShakeRef.current, 0.35);
                   sfx("hit");
                 }
               }
