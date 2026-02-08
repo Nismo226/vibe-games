@@ -135,6 +135,8 @@ export function ArcBreaker() {
 
   // laser visuals should stop at first hit
   const laserEndYRef = useRef<number | null>(null); // normalized arena y (0..1), null => full length
+  const bossShieldHitCdMsRef = useRef(0);
+  const anchorShieldHitCdMsRef = useRef(0);
 
   // expressive spin + charge system
   const paddleVelRef = useRef(0);
@@ -317,6 +319,28 @@ export function ArcBreaker() {
     reset();
     // start loading sprites asap
     ensureSprites();
+
+    // debug: allow auto-start scenarios for headless/local testing
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("boss") === "1") {
+      modeRef.current = "boss";
+      startBoss();
+    }
+    const p = qs.get("power");
+    if (p) {
+      const fx = effectsRef.current;
+      if (p === "laser") fx.laserMs = 3500;
+      if (p === "missiles") fx.missilesMs = 10_000;
+      if (p === "dmg") {
+        fx.dmgMult = 2;
+        fx.dmgMs = 10_000;
+      }
+      if (p === "wide") fx.wideMs = 12_000;
+      if (p === "multiball") {
+        // quick spawn for testing
+        if (ballsRef.current.length < 2) ballsRef.current.push({ ...ballsRef.current[0], vx: -ballsRef.current[0].vx, spin: 0, baseSp: ballsRef.current[0].baseSp });
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -435,6 +459,9 @@ export function ArcBreaker() {
       laserTickMsRef.current = Math.max(0, laserTickMsRef.current - dt * 1000);
       powerSpawnMsRef.current = Math.max(0, powerSpawnMsRef.current - dt * 1000);
       if (fx.dmgMs <= 0) fx.dmgMult = 1;
+      bossShieldHitCdMsRef.current = Math.max(0, bossShieldHitCdMsRef.current - dt * 1000);
+      anchorShieldHitCdMsRef.current = Math.max(0, anchorShieldHitCdMsRef.current - dt * 1000);
+
       if (fx.laserMs <= 0) {
         laserTickMsRef.current = 0;
         laserEndYRef.current = null;
@@ -708,6 +735,8 @@ export function ArcBreaker() {
 
       // laser beam damage (nerfed): ticks a few times per second, not every frame
       if (fx.laserMs > 0 && laserTickMsRef.current <= 0) {
+        // reset visual end; will be set by whatever we hit this tick
+        laserEndYRef.current = null;
         laserTickMsRef.current = 220; // tick rate
         const lx = paddleRef.current.x;
 
@@ -769,8 +798,16 @@ export function ArcBreaker() {
           }
           if (best) {
             // stop beam at bottom of bubble/body
-            const endY = best.y + best.h * 0.5 + 0.12;
-            laserEndYRef.current = Math.min(laserEndYRef.current ?? 1, endY);
+            // stop beam at bubble intersection
+            const cx = best.x + best.w * 0.5;
+            const cy = best.y + best.h * 0.5;
+            const rr = 0.12;
+            const dx = lx - cx;
+            const disc = rr * rr - dx * dx;
+            if (disc > 0) {
+              const yHit = cy + Math.sqrt(disc);
+              laserEndYRef.current = yHit;
+            }
 
             if (best.shieldHp > 0) best.shieldHp = Math.max(0, best.shieldHp - 1);
             else best.hp -= 1;
@@ -790,7 +827,7 @@ export function ArcBreaker() {
             const disc = rr * rr - dx * dx;
             if (disc > 0) {
               const yHit = cy + Math.sqrt(disc);
-              laserEndYRef.current = Math.min(laserEndYRef.current ?? 1, yHit);
+              laserEndYRef.current = yHit;
             }
 
             boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
@@ -803,7 +840,7 @@ export function ArcBreaker() {
             for (const part of boss.parts) {
               if (part.kind !== "core" || part.hp <= 0) continue;
               if (lx >= part.x && lx <= part.x + part.w) {
-                laserEndYRef.current = Math.min(laserEndYRef.current ?? 1, part.y + part.h);
+                laserEndYRef.current = part.y + part.h;
                 part.hp -= 1;
                 boss.coreHp = part.hp;
                 scoreRef.current += 1;
@@ -832,6 +869,13 @@ export function ArcBreaker() {
                 b.vx -= 2 * dot * nx;
                 b.vy -= 2 * dot * ny;
                 b.spin = clamp(b.spin + nx * 1.1, -3, 3);
+
+                // physical shield takes damage from ball impacts (cooldown shared)
+                if (anchorShieldHitCdMsRef.current <= 0) {
+                  anchorShieldHitCdMsRef.current = 140;
+                  part.shieldHp = Math.max(0, part.shieldHp - 1);
+                  sfx("hit");
+                }
               }
             }
 
@@ -852,6 +896,13 @@ export function ArcBreaker() {
                 b.vx -= 2 * dot * nx;
                 b.vy -= 2 * dot * ny;
                 b.spin = clamp(b.spin + nx * 1.2, -3, 3);
+
+                // physical shield takes damage from ball impacts (cooldown)
+                if (bossShieldHitCdMsRef.current <= 0) {
+                  bossShieldHitCdMsRef.current = 160;
+                  boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
+                  sfx("hit");
+                }
               }
             }
           }
