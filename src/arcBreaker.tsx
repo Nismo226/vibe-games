@@ -31,6 +31,15 @@ export function ArcBreaker() {
   const bricksRef = useRef<Brick[]>([]);
   const scoreRef = useRef(0);
 
+  // boss scaffolding (end-of-run)
+  const bossRef = useRef<{
+    active: boolean;
+    phase: 0 | 1 | 2 | 3;
+    coreHp: number;
+    vulnMs: number; // remaining vulnerable window
+    parts: { kind: "anchor" | "core"; x: number; y: number; w: number; h: number; hp: number }[];
+  }>({ active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [] });
+
   const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(3, window.devicePixelRatio || 1)) : 1;
 
   const layout = useMemo(() => {
@@ -63,6 +72,8 @@ export function ArcBreaker() {
     ballRef.current = { x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018 };
     scoreRef.current = 0;
 
+    bossRef.current = { active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [] };
+
     const bricks: Brick[] = [];
     const cols = 9;
     const rows = 6;
@@ -72,6 +83,32 @@ export function ArcBreaker() {
       }
     }
     bricksRef.current = bricks;
+  }
+
+  function startBoss() {
+    // Warden Prism (first end-of-run boss): break anchors → expose core windows → finish.
+    paddleRef.current = { x: 0.5, w: 0.22 };
+    ballRef.current = { x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018 };
+    scoreRef.current = 0;
+
+    // clear stage bricks for boss arena
+    bricksRef.current = [];
+
+    const parts = [
+      { kind: "anchor" as const, x: 0.12, y: 0.14, w: 0.14, h: 0.07, hp: 6 },
+      { kind: "anchor" as const, x: 0.74, y: 0.14, w: 0.14, h: 0.07, hp: 6 },
+      { kind: "anchor" as const, x: 0.12, y: 0.26, w: 0.14, h: 0.07, hp: 6 },
+      { kind: "anchor" as const, x: 0.74, y: 0.26, w: 0.14, h: 0.07, hp: 6 },
+      { kind: "core" as const, x: 0.38, y: 0.18, w: 0.24, h: 0.18, hp: 36 },
+    ];
+
+    bossRef.current = {
+      active: true,
+      phase: 1,
+      coreHp: 36,
+      vulnMs: 0,
+      parts,
+    };
   }
 
   useEffect(() => {
@@ -203,6 +240,61 @@ export function ArcBreaker() {
         }
       }
 
+      // boss parts (phase scaffolding)
+      const boss = bossRef.current;
+      if (boss.active) {
+        boss.vulnMs = Math.max(0, boss.vulnMs - dt * 1000);
+
+        // phase logic: once all anchors are down, open a vulnerability window on the core
+        const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
+        if (!anchorsAlive && boss.phase === 1) {
+          boss.phase = 2;
+          boss.vulnMs = 4500;
+        }
+        if (boss.phase === 2 && boss.vulnMs <= 0) {
+          // if player didn't finish, re-arm anchors lightly and repeat window
+          boss.phase = 1;
+          for (const p of boss.parts) {
+            if (p.kind === "anchor") p.hp = Math.max(p.hp, 3);
+          }
+        }
+
+        // collisions
+        for (const part of boss.parts) {
+          if (part.hp <= 0) continue;
+          if (part.kind === "core") {
+            const coreVulnerable = boss.phase === 2 && boss.vulnMs > 0;
+            if (!coreVulnerable) continue;
+          }
+
+          const x0 = part.x;
+          const x1 = part.x + part.w;
+          const y0 = part.y;
+          const y1 = part.y + part.h;
+
+          const cx = clamp(b.x, x0, x1);
+          const cy = clamp(b.y, y0, y1);
+          const dx = b.x - cx;
+          const dy = b.y - cy;
+          if (dx * dx + dy * dy <= b.r * b.r) {
+            if (Math.abs(dx) > Math.abs(dy)) b.vx *= -1;
+            else b.vy *= -1;
+
+            part.hp -= 1;
+            scoreRef.current += part.kind === "core" ? 50 : 20;
+
+            if (part.kind === "core") {
+              boss.coreHp = part.hp;
+              if (part.hp <= 0) {
+                boss.phase = 3;
+                boss.active = false;
+              }
+            }
+            break;
+          }
+        }
+      }
+
       // fail/reset
       if (b.y - b.r > 1.05) {
         reset();
@@ -232,6 +324,19 @@ export function ArcBreaker() {
       ctx.font = "500 14px system-ui, -apple-system, Segoe UI, Roboto";
       ctx.fillText(`Score ${scoreRef.current}`, layout.pad, layout.pad + 40);
 
+      // debug boss button (tap)
+      const btnW = 110;
+      const btnH = 28;
+      const btnX = size.w - layout.pad - btnW;
+      const btnY = layout.pad + 14;
+      ctx.fillStyle = "rgba(80,200,255,0.12)";
+      ctx.fillRect(btnX, btnY, btnW, btnH);
+      ctx.strokeStyle = "rgba(120,220,255,0.25)";
+      ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1);
+      ctx.fillStyle = "rgba(220,240,255,0.75)";
+      ctx.font = "600 13px system-ui, -apple-system, Segoe UI, Roboto";
+      ctx.fillText("Start Boss", btnX + 16, btnY + 19);
+
       // bricks
       const cols = 9;
       const bxPad = 0.06;
@@ -254,6 +359,48 @@ export function ArcBreaker() {
         ctx.fillRect(x0, y0, w, h);
         ctx.strokeStyle = "rgba(255,255,255,0.18)";
         ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+      }
+
+      // boss render (Warden Prism scaffolding)
+      const boss2 = bossRef.current;
+      if (boss2.active) {
+        // subtle backdrop
+        ctx.fillStyle = "rgba(80,200,255,0.04)";
+        ctx.fillRect(arena.x, arena.y, arena.w, arena.h * 0.42);
+
+        for (const part of boss2.parts) {
+          if (part.hp <= 0) continue;
+          const x = arena.x + part.x * arena.w;
+          const y = arena.y + part.y * arena.h;
+          const w = part.w * arena.w;
+          const h = part.h * arena.h;
+
+          const isCore = part.kind === "core";
+          const coreVulnerable = isCore && boss2.phase === 2 && boss2.vulnMs > 0;
+
+          ctx.fillStyle = isCore
+            ? coreVulnerable
+              ? "rgba(255,90,200,0.85)"
+              : "rgba(180,200,255,0.18)"
+            : "rgba(255,190,80,0.82)";
+          ctx.fillRect(x, y, w, h);
+
+          // hp pips
+          ctx.fillStyle = "rgba(0,0,0,0.25)";
+          ctx.fillRect(x, y + h - 4, w, 4);
+          ctx.fillStyle = isCore ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.55)";
+          const frac = clamp(part.hp / (isCore ? 36 : 6), 0, 1);
+          ctx.fillRect(x, y + h - 4, w * frac, 4);
+
+          ctx.strokeStyle = "rgba(255,255,255,0.16)";
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        }
+
+        // boss status text
+        ctx.fillStyle = "rgba(220,240,255,0.5)";
+        ctx.font = "600 13px system-ui, -apple-system, Segoe UI, Roboto";
+        const msg = boss2.phase === 1 ? "BOSS: Warden Prism — break anchors" : "BOSS: CORE VULNERABLE";
+        ctx.fillText(msg, arena.x + 8, arena.y + 18);
       }
 
       // paddle
@@ -308,6 +455,21 @@ export function ArcBreaker() {
         touchAction: "none",
       }}
       onPointerDown={(e) => {
+        // HUD taps (debug actions)
+        const btnW = 110;
+        const btnH = 28;
+        const btnX = size.w - layout.pad - btnW;
+        const btnY = layout.pad + 14;
+        if (
+          e.clientX >= btnX &&
+          e.clientX <= btnX + btnW &&
+          e.clientY >= btnY &&
+          e.clientY <= btnY + btnH
+        ) {
+          startBoss();
+          return;
+        }
+
         // lock paddle control to first pointer inside control zone
         if (touchRef.current) return;
         const { controlZone } = layout;
