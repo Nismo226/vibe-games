@@ -10,6 +10,16 @@ type Brick = { x: number; y: number; hp: number };
 
 type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; r: number; color: string };
 
+type ShieldVfx = {
+  kind: "ring" | "burstAnchor" | "burstShield";
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  r: number;
+  rot: number;
+};
+
 type PowerUpKind = "dmg" | "missiles" | "laser" | "multiball" | "wide";
 
 type PowerUp = {
@@ -113,6 +123,7 @@ export function ArcBreaker() {
 
   // juice + powerups
   const particlesRef = useRef<Particle[]>([]);
+  const shieldVfxRef = useRef<ShieldVfx[]>([]);
   const trailRef = useRef<{ x: number; y: number; life: number }[]>([]);
   const powerUpsRef = useRef<PowerUp[]>([]);
   const missilesRef = useRef<Missile[]>([]);
@@ -221,6 +232,7 @@ export function ArcBreaker() {
     scoreRef.current = 0;
 
     particlesRef.current = [];
+    shieldVfxRef.current = [];
     trailRef.current = [];
     powerUpsRef.current = [];
     missilesRef.current = [];
@@ -273,6 +285,7 @@ export function ArcBreaker() {
     scoreRef.current = 0;
 
     particlesRef.current = [];
+    shieldVfxRef.current = [];
     trailRef.current = [];
     powerUpsRef.current = [];
     missilesRef.current = [];
@@ -394,6 +407,18 @@ export function ArcBreaker() {
       g.connect(a.master);
       o.start(t);
       o.stop(t + (kind === "win" ? 0.24 : kind === "laser" ? 0.16 : 0.12));
+    };
+
+    const spawnShieldVfx = (kind: ShieldVfx["kind"], x: number, y: number, r: number) => {
+      shieldVfxRef.current.push({
+        kind,
+        x,
+        y,
+        r,
+        rot: Math.random() * Math.PI * 2,
+        life: kind === "ring" ? 220 : 520,
+        maxLife: kind === "ring" ? 220 : 520,
+      });
     };
 
     let raf = 0;
@@ -521,6 +546,17 @@ export function ArcBreaker() {
         pt.life -= dt * 1000;
         if (pt.life <= 0) {
           particlesRef.current.splice(i, 1);
+          i--;
+        }
+      }
+
+      // update shield VFX
+      for (let i = 0; i < shieldVfxRef.current.length; i++) {
+        const fx = shieldVfxRef.current[i];
+        fx.life -= dt * 1000;
+        fx.rot += dt * 1.8;
+        if (fx.life <= 0) {
+          shieldVfxRef.current.splice(i, 1);
           i--;
         }
       }
@@ -804,13 +840,20 @@ export function ArcBreaker() {
             const rr = 0.12;
             const dx = lx - cx;
             const disc = rr * rr - dx * dx;
+            let yHit = best.y + best.h;
             if (disc > 0) {
-              const yHit = cy + Math.sqrt(disc);
+              yHit = cy + Math.sqrt(disc);
               laserEndYRef.current = yHit;
             }
 
-            if (best.shieldHp > 0) best.shieldHp = Math.max(0, best.shieldHp - 1);
-            else best.hp -= 1;
+            const preShield = best.shieldHp;
+            if (best.shieldHp > 0) {
+              best.shieldHp = Math.max(0, best.shieldHp - 1);
+              spawnShieldVfx("ring", lx, yHit, 0.06);
+              if (preShield > 0 && best.shieldHp <= 0) spawnShieldVfx("burstAnchor", cx, cy, 0.11);
+            } else {
+              best.hp -= 1;
+            }
             scoreRef.current += 1;
             did = true;
           }
@@ -830,7 +873,10 @@ export function ArcBreaker() {
               laserEndYRef.current = yHit;
             }
 
+            const pre = boss.bossShieldHp;
             boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
+            spawnShieldVfx("ring", lx, laserEndYRef.current ?? cy + rr, 0.085);
+            if (pre > 0 && boss.bossShieldHp <= 0) spawnShieldVfx("burstShield", cx, cy, 0.26);
             scoreRef.current += 1;
             did = true;
           }
@@ -873,7 +919,10 @@ export function ArcBreaker() {
                 // physical shield takes damage from ball impacts (cooldown shared)
                 if (anchorShieldHitCdMsRef.current <= 0) {
                   anchorShieldHitCdMsRef.current = 140;
+                  const pre = part.shieldHp;
                   part.shieldHp = Math.max(0, part.shieldHp - 1);
+                  spawnShieldVfx("ring", b.x, b.y, 0.06);
+                  if (pre > 0 && part.shieldHp <= 0) spawnShieldVfx("burstAnchor", cx, cy, 0.11);
                   sfx("hit");
                 }
               }
@@ -900,7 +949,10 @@ export function ArcBreaker() {
                 // physical shield takes damage from ball impacts (cooldown)
                 if (bossShieldHitCdMsRef.current <= 0) {
                   bossShieldHitCdMsRef.current = 160;
+                  const pre = boss.bossShieldHp;
                   boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
+                  spawnShieldVfx("ring", b.x, b.y, 0.085);
+                  if (pre > 0 && boss.bossShieldHp <= 0) spawnShieldVfx("burstShield", cx, cy, 0.26);
                   sfx("hit");
                 }
               }
@@ -918,7 +970,10 @@ export function ArcBreaker() {
               const rr = 0.145;
               const d = Math.hypot(m.x - cx, m.y - cy);
               if (d < rr) {
+                const pre = part.shieldHp;
                 part.shieldHp = Math.max(0, part.shieldHp - 1);
+                spawnShieldVfx("ring", m.x, m.y, 0.06);
+                if (pre > 0 && part.shieldHp <= 0) spawnShieldVfx("burstAnchor", cx, cy, 0.11);
                 hitShield = true;
                 break;
               }
@@ -926,7 +981,10 @@ export function ArcBreaker() {
             if (!hitShield && boss.phase >= 2 && boss.bossShieldHp > 0) {
               const d = Math.hypot(m.x - 0.5, m.y - 0.24);
               if (d < 0.36) {
+                const pre = boss.bossShieldHp;
                 boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
+                spawnShieldVfx("ring", m.x, m.y, 0.085);
+                if (pre > 0 && boss.bossShieldHp <= 0) spawnShieldVfx("burstShield", 0.5, 0.24, 0.26);
                 hitShield = true;
               }
             }
@@ -1578,6 +1636,36 @@ export function ArcBreaker() {
         ctx.moveTo(lx, yStart);
         ctx.lineTo(lx, yEnd);
         ctx.stroke();
+      }
+
+      // shield VFX (sprite overlays)
+      {
+        const spr = spritesRef.current;
+        const spritesReady = spr.loaded;
+        if (spritesReady) {
+          for (const fx of shieldVfxRef.current) {
+            const x = arena.x + fx.x * arena.w;
+            const y = arena.y + fx.y * arena.h;
+            const a = clamp(fx.life / Math.max(1, fx.maxLife), 0, 1);
+            const rr = fx.r * arena.w;
+            const img =
+              fx.kind === "ring"
+                ? spr.ringImpact
+                : fx.kind === "burstAnchor"
+                  ? spr.burstAnchor
+                  : spr.burstShieldBreak;
+            if (!img || !img.complete) continue;
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(fx.rot);
+            ctx.globalCompositeOperation = "screen";
+            ctx.globalAlpha = (fx.kind === "ring" ? 0.55 : 0.85) * (0.25 + 0.75 * a);
+            ctx.drawImage(img, -rr, -rr, rr * 2, rr * 2);
+            ctx.restore();
+          }
+          ctx.globalAlpha = 1;
+        }
       }
 
       // particles
