@@ -265,6 +265,11 @@ export function ArcBreaker() {
       const dt = Math.min(0.033, (now - last) / 1000);
       last = now;
 
+      // keep audio alive (iOS sometimes suspends between phases)
+      if (audioRef.current && audioReadyRef.current && audioRef.current.ctx.state !== "running") {
+        audioRef.current.ctx.resume().catch(() => {});
+      }
+
       // control: smooth paddle toward target
       const targetX = targetXRef.current;
       if (targetX != null) {
@@ -713,14 +718,17 @@ export function ArcBreaker() {
       }
 
       // draw
-      // camera juice
+      // Clear with a stable transform first (prevents ghosting artifacts when shaking)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size.w, size.h);
+
+      // camera juice (apply as translation after clearing)
       const shake = screenShakeRef.current;
       screenShakeRef.current = Math.max(0, shake - dt * 2.6);
       const sx = (Math.random() - 0.5) * 10 * screenShakeRef.current;
       const sy = (Math.random() - 0.5) * 10 * screenShakeRef.current;
-      ctx.setTransform(dpr, 0, 0, dpr, sx, sy);
-
-      ctx.clearRect(-50, -50, size.w + 100, size.h + 100);
+      ctx.save();
+      ctx.translate(sx, sy);
 
       // background
       const g = ctx.createLinearGradient(0, 0, 0, size.h);
@@ -742,10 +750,11 @@ export function ArcBreaker() {
       ctx.fillStyle = "rgba(220,240,255,0.55)";
       ctx.font = "500 14px system-ui, -apple-system, Segoe UI, Roboto";
       ctx.fillText(`Score ${scoreRef.current}`, layout.pad, layout.pad + 40);
-      if (!audioReadyRef.current) {
-        ctx.fillStyle = "rgba(255,200,120,0.55)";
-        ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto";
-        ctx.fillText("Tap anywhere to enable sound", layout.pad, layout.pad + 62);
+      {
+        // sound status
+        ctx.fillStyle = audioReadyRef.current ? "rgba(140,255,160,0.55)" : "rgba(255,200,120,0.55)";
+        ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto";
+        ctx.fillText(audioReadyRef.current ? "SOUND: ON" : "SOUND: TAP TO ENABLE", layout.pad, layout.pad + 62);
       }
 
       // debug boss button (tap)
@@ -970,6 +979,7 @@ export function ArcBreaker() {
       ctx.font = "500 13px system-ui, -apple-system, Segoe UI, Roboto";
       ctx.fillText("Touch & drag to move paddle — catch drops", layout.pad, controlZone.y + 24);
 
+      ctx.restore();
       raf = requestAnimationFrame(step);
     };
 
