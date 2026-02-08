@@ -70,6 +70,10 @@ export function ArcBreaker() {
   });
   const screenShakeRef = useRef(0);
   const audioRef = useRef<AudioState | null>(null);
+  const audioReadyRef = useRef(false);
+  const modeRef = useRef<"stage" | "boss" | "win">("stage");
+  const stageClearMsRef = useRef(0);
+  const laserTickMsRef = useRef(0);
 
   // boss scaffolding (end-of-run)
   const bossRef = useRef<{
@@ -126,6 +130,9 @@ export function ArcBreaker() {
       wideMs: 0,
     };
     screenShakeRef.current = 0;
+    modeRef.current = "stage";
+    stageClearMsRef.current = 0;
+    laserTickMsRef.current = 0;
 
     bossRef.current = { active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [] };
 
@@ -210,24 +217,32 @@ export function ArcBreaker() {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const sfx = (kind: "hit" | "break" | "power" | "laser") => {
+    const sfx = (kind: "hit" | "break" | "power" | "laser" | "win") => {
       const a = audioRef.current;
-      if (!a) return;
+      if (!a || !audioReadyRef.current) return;
       const t = a.ctx.currentTime;
       const o = a.ctx.createOscillator();
       const g = a.ctx.createGain();
-      o.type = kind === "laser" ? "sawtooth" : "triangle";
+      o.type = kind === "laser" ? "sawtooth" : kind === "break" ? "square" : "triangle";
       const f =
-        kind === "hit" ? 520 : kind === "break" ? 240 : kind === "power" ? 740 : 160;
+        kind === "hit"
+          ? 520
+          : kind === "break"
+            ? 220
+            : kind === "power"
+              ? 740
+              : kind === "win"
+                ? 880
+                : 160;
       o.frequency.setValueAtTime(f, t);
-      o.frequency.exponentialRampToValueAtTime(f * (kind === "break" ? 0.55 : 1.35), t + 0.08);
+      o.frequency.exponentialRampToValueAtTime(f * (kind === "break" ? 0.6 : 1.25), t + 0.08);
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(kind === "laser" ? 0.06 : 0.12, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + (kind === "laser" ? 0.12 : 0.09));
+      g.gain.exponentialRampToValueAtTime(kind === "laser" ? 0.09 : 0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (kind === "win" ? 0.22 : kind === "laser" ? 0.14 : 0.1));
       o.connect(g);
       g.connect(a.master);
       o.start(t);
-      o.stop(t + (kind === "laser" ? 0.13 : 0.1));
+      o.stop(t + (kind === "win" ? 0.24 : kind === "laser" ? 0.16 : 0.12));
     };
 
     let raf = 0;
@@ -261,6 +276,7 @@ export function ArcBreaker() {
       fx.multiballMs = Math.max(0, fx.multiballMs - dt * 1000);
       fx.wideMs = Math.max(0, fx.wideMs - dt * 1000);
       fx.missileCooldownMs = Math.max(0, fx.missileCooldownMs - dt * 1000);
+      laserTickMsRef.current = Math.max(0, laserTickMsRef.current - dt * 1000);
       if (fx.dmgMs <= 0) fx.dmgMult = 1;
 
       // widen paddle if active
@@ -451,7 +467,8 @@ export function ArcBreaker() {
             } else if (pu.kind === "missiles") {
               fx.missilesMs = 10_000;
             } else if (pu.kind === "laser") {
-              fx.laserMs = 5_000;
+              fx.laserMs = 3_500;
+              laserTickMsRef.current = 0;
               sfx("laser");
             } else if (pu.kind === "wide") {
               fx.wideMs = 12_000;
@@ -465,11 +482,16 @@ export function ArcBreaker() {
         }
       }
 
-      // laser beam damage (5s)
-      if (fx.laserMs > 0) {
+      // laser beam damage (nerfed): ticks a few times per second, not every frame
+      if (fx.laserMs > 0 && laserTickMsRef.current <= 0) {
+        laserTickMsRef.current = 220; // tick rate
         const lx = paddleRef.current.x;
+
+        // limit how much it can delete per tick
+        let budget = 2;
+
         // bricks
-        for (let i = 0; i < bricksRef.current.length; i++) {
+        for (let i = 0; i < bricksRef.current.length && budget > 0; i++) {
           const br = bricksRef.current[i];
           const cols = 9;
           const bxPad = 0.06;
@@ -482,6 +504,7 @@ export function ArcBreaker() {
           const y1 = top + (br.y + 1) * cellH;
           if (lx >= x0 && lx <= x1 && y1 < 0.92) {
             br.hp -= 1;
+            budget--;
             if (br.hp <= 0) {
               bricksRef.current.splice(i, 1);
               i--;
@@ -489,19 +512,18 @@ export function ArcBreaker() {
             }
           }
         }
-        // boss parts
+
+        // boss parts (reduced)
         const boss = bossRef.current;
         if (boss.active && boss.phase === 2 && boss.vulnMs > 0) {
           for (const part of boss.parts) {
             if (part.kind !== "core" || part.hp <= 0) continue;
             if (lx >= part.x && lx <= part.x + part.w) {
+              // laser is precision, not raw DPS
               part.hp -= 1;
               boss.coreHp = part.hp;
-              scoreRef.current += 2;
-              if (part.hp <= 0) {
-                boss.phase = 3;
-                boss.active = false;
-              }
+              scoreRef.current += 1;
+              break;
             }
           }
         }
@@ -572,6 +594,20 @@ export function ArcBreaker() {
         }
       }
 
+      // stage clear -> auto boss
+      if (modeRef.current === "stage") {
+        if (bricksRef.current.length === 0 && !bossRef.current.active) {
+          stageClearMsRef.current += dt * 1000;
+          if (stageClearMsRef.current > 800) {
+            modeRef.current = "boss";
+            startBoss();
+            sfx("power");
+          }
+        } else {
+          stageClearMsRef.current = 0;
+        }
+      }
+
       // boss parts (phase scaffolding)
       const boss = bossRef.current;
       if (boss.active) {
@@ -620,10 +656,21 @@ export function ArcBreaker() {
               if (part.hp <= 0) {
                 boss.phase = 3;
                 boss.active = false;
+                modeRef.current = "win";
+                stageClearMsRef.current = 0;
+                sfx("win");
               }
             }
             break;
           }
+        }
+      }
+
+      // win flow: brief celebration then restart
+      if (modeRef.current === "win") {
+        stageClearMsRef.current += dt * 1000;
+        if (stageClearMsRef.current > 2200) {
+          reset();
         }
       }
 
@@ -662,6 +709,11 @@ export function ArcBreaker() {
       ctx.fillStyle = "rgba(220,240,255,0.55)";
       ctx.font = "500 14px system-ui, -apple-system, Segoe UI, Roboto";
       ctx.fillText(`Score ${scoreRef.current}`, layout.pad, layout.pad + 40);
+      if (!audioReadyRef.current) {
+        ctx.fillStyle = "rgba(255,200,120,0.55)";
+        ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto";
+        ctx.fillText("Tap anywhere to enable sound", layout.pad, layout.pad + 62);
+      }
 
       // debug boss button (tap)
       const btnW = 110;
@@ -885,13 +937,23 @@ export function ArcBreaker() {
           if (Ctx) {
             const ctx = new Ctx();
             const master = ctx.createGain();
-            master.gain.value = 0.55;
-            master.connect(ctx.destination);
+            master.gain.value = 0.9;
+            // tame harsh peaks
+            const comp = ctx.createDynamicsCompressor();
+            comp.threshold.value = -18;
+            comp.knee.value = 22;
+            comp.ratio.value = 7;
+            comp.attack.value = 0.003;
+            comp.release.value = 0.12;
+            master.connect(comp);
+            comp.connect(ctx.destination);
             audioRef.current = { ctx, master };
           }
-        } else {
-          // resume if needed
-          audioRef.current.ctx.resume().catch(() => {});
+        }
+        if (audioRef.current) {
+          audioRef.current.ctx.resume().then(() => {
+            audioReadyRef.current = true;
+          }).catch(() => {});
         }
 
         // HUD taps (debug actions)
