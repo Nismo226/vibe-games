@@ -57,7 +57,10 @@ export function ArcBreaker() {
 
   // sim state (refs so we can run in rAF)
   const paddleRef = useRef({ x: 0.5, w: 0.22 }); // normalized 0..1, width as fraction of arena width
-  const ballRef = useRef({ x: 0.5, y: 0.72, vx: 0.25, vy: -0.55, r: 0.018 });
+
+  type Ball = { x: number; y: number; vx: number; vy: number; r: number };
+  const ballsRef = useRef<Ball[]>([{ x: 0.5, y: 0.72, vx: 0.25, vy: -0.55, r: 0.018 }]);
+
   const bricksRef = useRef<Brick[]>([]);
   const scoreRef = useRef(0);
 
@@ -121,7 +124,7 @@ export function ArcBreaker() {
 
   function reset() {
     paddleRef.current = { x: 0.5, w: 0.22 };
-    ballRef.current = { x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018 };
+    ballsRef.current = [{ x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018 }];
     scoreRef.current = 0;
 
     particlesRef.current = [];
@@ -159,7 +162,7 @@ export function ArcBreaker() {
   function startBoss() {
     // Warden Prism (first end-of-run boss): break anchors → expose core windows → finish.
     paddleRef.current = { x: 0.5, w: 0.22 };
-    ballRef.current = { x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018 };
+    ballsRef.current = [{ x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018 }];
     scoreRef.current = 0;
 
     particlesRef.current = [];
@@ -370,101 +373,105 @@ export function ArcBreaker() {
       }
 
       // sim
-      const b = ballRef.current;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      trailRef.current.push({ x: b.x, y: b.y, life: 180 });
-      if (trailRef.current.length > 22) trailRef.current.shift();
+            const balls = ballsRef.current;
+      for (const b of balls) {
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        trailRef.current.push({ x: b.x, y: b.y, life: 160 });
+      }
+      while (trailRef.current.length > 48) trailRef.current.shift();
 
-      // walls
-      if (b.x - b.r < 0) {
-        b.x = b.r;
-        b.vx *= -1;
-      }
-      if (b.x + b.r > 1) {
-        b.x = 1 - b.r;
-        b.vx *= -1;
-      }
-      if (b.y - b.r < 0) {
-        b.y = b.r;
-        b.vy *= -1;
-      }
-
-      // paddle
+      // walls + paddle (per-ball)
       const p = paddleRef.current;
       const paddleY = 0.93;
       const px0 = p.x - p.w / 2;
       const px1 = p.x + p.w / 2;
       const py0 = paddleY - 0.018;
       const py1 = paddleY + 0.018;
-      if (b.vy > 0 && b.y + b.r >= py0 && b.y - b.r <= py1 && b.x >= px0 && b.x <= px1) {
-        b.y = py0 - b.r;
 
-        // reflect with controlled “english” based on hit position
-        const t = (b.x - p.x) / (p.w / 2);
-        const english = clamp(t, -1, 1);
-        const speed = Math.max(0.35, Math.hypot(b.vx, b.vy));
-        b.vy = -Math.abs(b.vy);
-        b.vx = clamp(b.vx + english * 0.35, -0.85, 0.85);
-        const ns = Math.hypot(b.vx, b.vy);
-        b.vx = (b.vx / ns) * speed;
-        b.vy = (b.vy / ns) * speed;
+      for (const b of ballsRef.current) {
+        if (b.x - b.r < 0) {
+          b.x = b.r;
+          b.vx *= -1;
+        }
+        if (b.x + b.r > 1) {
+          b.x = 1 - b.r;
+          b.vx *= -1;
+        }
+        if (b.y - b.r < 0) {
+          b.y = b.r;
+          b.vy *= -1;
+        }
+
+        if (b.vy > 0 && b.y + b.r >= py0 && b.y - b.r <= py1 && b.x >= px0 && b.x <= px1) {
+          b.y = py0 - b.r;
+          const t = (b.x - p.x) / (p.w / 2);
+          const english = clamp(t, -1, 1);
+          const speed = Math.max(0.35, Math.hypot(b.vx, b.vy));
+          b.vy = -Math.abs(b.vy);
+          b.vx = clamp(b.vx + english * 0.35, -0.85, 0.85);
+          const ns = Math.hypot(b.vx, b.vy);
+          b.vx = (b.vx / ns) * speed;
+          b.vy = (b.vy / ns) * speed;
+        }
       }
 
       // bricks (simple AABB in normalized space)
-      const bricks = bricksRef.current;
-      if (bricks.length) {
-        const cols = 9;
-        const bxPad = 0.06;
-        const top = 0.08;
-        const areaW = 1 - bxPad * 2;
-        const cellW = areaW / cols;
-        const cellH = 0.045;
-        for (let i = 0; i < bricks.length; i++) {
-          const br = bricks[i];
-          const x0 = bxPad + br.x * cellW + 0.004;
-          const x1 = bxPad + (br.x + 1) * cellW - 0.004;
-          const y0 = top + br.y * cellH + 0.004;
-          const y1 = top + (br.y + 1) * cellH - 0.004;
+      {
+        const bricks = bricksRef.current;
+        if (bricks.length) {
+          const cols = 9;
+          const bxPad = 0.06;
+          const top = 0.08;
+          const areaW = 1 - bxPad * 2;
+          const cellW = areaW / cols;
+          const cellH = 0.045;
 
-          // circle vs AABB
-          const cx = clamp(b.x, x0, x1);
-          const cy = clamp(b.y, y0, y1);
-          const dx = b.x - cx;
-          const dy = b.y - cy;
-          if (dx * dx + dy * dy <= b.r * b.r) {
-            // basic normal
-            if (Math.abs(dx) > Math.abs(dy)) b.vx *= -1;
-            else b.vy *= -1;
+          for (const b of ballsRef.current) {
+            for (let i = 0; i < bricks.length; i++) {
+              const br = bricks[i];
+              const x0 = bxPad + br.x * cellW + 0.004;
+              const x1 = bxPad + (br.x + 1) * cellW - 0.004;
+              const y0 = top + br.y * cellH + 0.004;
+              const y1 = top + (br.y + 1) * cellH - 0.004;
 
-            const dmg = Math.max(1, Math.round(effectsRef.current.dmgMult));
-            br.hp -= dmg;
-            scoreRef.current += 10;
+              const cx = clamp(b.x, x0, x1);
+              const cy = clamp(b.y, y0, y1);
+              const dx = b.x - cx;
+              const dy = b.y - cy;
+              if (dx * dx + dy * dy <= b.r * b.r) {
+                if (Math.abs(dx) > Math.abs(dy)) b.vx *= -1;
+                else b.vy *= -1;
 
-            // hit juice
-            screenShakeRef.current = Math.max(screenShakeRef.current, 0.6);
-            sfx("hit");
-            for (let k = 0; k < 8; k++) {
-              const a = Math.random() * Math.PI * 2;
-              const sp = 0.35 + Math.random() * 0.55;
-              particlesRef.current.push({
-                x: (x0 + x1) * 0.5,
-                y: (y0 + y1) * 0.5,
-                vx: Math.cos(a) * sp,
-                vy: Math.sin(a) * sp,
-                life: 240 + Math.random() * 180,
-                maxLife: 400,
-                r: 0.006 + Math.random() * 0.006,
-                color: br.hp >= 2 ? "rgba(255,150,90,0.9)" : "rgba(80,220,255,0.9)",
-              });
+                const dmg = Math.max(1, Math.round(effectsRef.current.dmgMult));
+                br.hp -= dmg;
+                scoreRef.current += 10;
+
+                screenShakeRef.current = Math.max(screenShakeRef.current, 0.6);
+                sfx("hit");
+                for (let k = 0; k < 8; k++) {
+                  const a = Math.random() * Math.PI * 2;
+                  const sp = 0.35 + Math.random() * 0.55;
+                  particlesRef.current.push({
+                    x: (x0 + x1) * 0.5,
+                    y: (y0 + y1) * 0.5,
+                    vx: Math.cos(a) * sp,
+                    vy: Math.sin(a) * sp,
+                    life: 240 + Math.random() * 180,
+                    maxLife: 400,
+                    r: 0.006 + Math.random() * 0.006,
+                    color: br.hp >= 2 ? "rgba(255,150,90,0.9)" : "rgba(80,220,255,0.9)",
+                  });
+                }
+
+                if (br.hp <= 0) {
+                  sfx("break");
+                  bricks.splice(i, 1);
+                  i--;
+                }
+                break;
+              }
             }
-
-            if (br.hp <= 0) {
-              sfx("break");
-              bricks.splice(i, 1);
-              i--;
-            }
-            break;
           }
         }
       }
@@ -629,61 +636,62 @@ export function ArcBreaker() {
       }
 
       // boss parts (phase scaffolding)
-      const boss = bossRef.current;
-      if (boss.active) {
-        boss.vulnMs = Math.max(0, boss.vulnMs - dt * 1000);
+      {
+        const boss = bossRef.current;
+        if (boss.active) {
+          boss.vulnMs = Math.max(0, boss.vulnMs - dt * 1000);
 
-        // phase logic: once all anchors are down, open a vulnerability window on the core
-        const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
-        if (!anchorsAlive && boss.phase === 1) {
-          boss.phase = 2;
-          boss.vulnMs = 4500;
-        }
-        if (boss.phase === 2 && boss.vulnMs <= 0) {
-          // if player didn't finish, re-arm anchors lightly and repeat window
-          boss.phase = 1;
-          for (const p of boss.parts) {
-            if (p.kind === "anchor") p.hp = Math.max(p.hp, 3);
+          const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
+          if (!anchorsAlive && boss.phase === 1) {
+            boss.phase = 2;
+            boss.vulnMs = 4500;
           }
-        }
-
-        // collisions
-        for (const part of boss.parts) {
-          if (part.hp <= 0) continue;
-          if (part.kind === "core") {
-            const coreVulnerable = boss.phase === 2 && boss.vulnMs > 0;
-            if (!coreVulnerable) continue;
+          if (boss.phase === 2 && boss.vulnMs <= 0) {
+            boss.phase = 1;
+            for (const p of boss.parts) {
+              if (p.kind === "anchor") p.hp = Math.max(p.hp, 3);
+            }
           }
 
-          const x0 = part.x;
-          const x1 = part.x + part.w;
-          const y0 = part.y;
-          const y1 = part.y + part.h;
+          for (const b of ballsRef.current) {
+            for (const part of boss.parts) {
+              if (part.hp <= 0) continue;
+              if (part.kind === "core") {
+                const coreVulnerable = boss.phase === 2 && boss.vulnMs > 0;
+                if (!coreVulnerable) continue;
+              }
 
-          const cx = clamp(b.x, x0, x1);
-          const cy = clamp(b.y, y0, y1);
-          const dx = b.x - cx;
-          const dy = b.y - cy;
-          if (dx * dx + dy * dy <= b.r * b.r) {
-            if (Math.abs(dx) > Math.abs(dy)) b.vx *= -1;
-            else b.vy *= -1;
+              const x0 = part.x;
+              const x1 = part.x + part.w;
+              const y0 = part.y;
+              const y1 = part.y + part.h;
 
-            part.hp -= 1;
-            scoreRef.current += part.kind === "core" ? 50 : 20;
-            screenShakeRef.current = Math.max(screenShakeRef.current, part.kind === "core" ? 0.9 : 0.5);
-            sfx(part.kind === "core" ? "break" : "hit");
+              const cx = clamp(b.x, x0, x1);
+              const cy = clamp(b.y, y0, y1);
+              const dx = b.x - cx;
+              const dy = b.y - cy;
+              if (dx * dx + dy * dy <= b.r * b.r) {
+                if (Math.abs(dx) > Math.abs(dy)) b.vx *= -1;
+                else b.vy *= -1;
 
-            if (part.kind === "core") {
-              boss.coreHp = part.hp;
-              if (part.hp <= 0) {
-                boss.phase = 3;
-                boss.active = false;
-                modeRef.current = "win";
-                stageClearMsRef.current = 0;
-                sfx("win");
+                part.hp -= 1;
+                scoreRef.current += part.kind === "core" ? 50 : 20;
+                screenShakeRef.current = Math.max(screenShakeRef.current, part.kind === "core" ? 0.9 : 0.5);
+                sfx(part.kind === "core" ? "break" : "hit");
+
+                if (part.kind === "core") {
+                  boss.coreHp = part.hp;
+                  if (part.hp <= 0) {
+                    boss.phase = 3;
+                    boss.active = false;
+                    modeRef.current = "win";
+                    stageClearMsRef.current = 0;
+                    sfx("win");
+                  }
+                }
+                break;
               }
             }
-            break;
           }
         }
       }
@@ -696,9 +704,12 @@ export function ArcBreaker() {
         }
       }
 
-      // fail/reset
-      if (b.y - b.r > 1.05) {
-        reset();
+      // fail/reset (any ball falls)
+      for (const b of ballsRef.current) {
+        if (b.y - b.r > 1.05) {
+          reset();
+          break;
+        }
       }
 
       // draw
@@ -897,10 +908,10 @@ export function ArcBreaker() {
       for (const t of trailRef.current) {
         const x = arena.x + t.x * arena.w;
         const y = arena.y + t.y * arena.h;
-        const a = clamp(t.life / 180, 0, 1);
-        ctx.fillStyle = `rgba(120,220,255,${0.10 * a})`;
+        const a = clamp(t.life / 160, 0, 1);
+        ctx.fillStyle = `rgba(120,220,255,-e)`;
         ctx.beginPath();
-        ctx.arc(x, y, b.r * arena.w * (0.8 + 0.6 * a), 0, Math.PI * 2);
+        ctx.arc(x, y, 6 * (0.8 + 0.8 * a), 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -913,26 +924,31 @@ export function ArcBreaker() {
       ctx.fillStyle = effectsRef.current.laserMs > 0 ? "rgba(255,90,200,0.45)" : "rgba(80,200,255,0.35)";
       ctx.fillRect(px - pw / 2, py - 8, pw, 3);
 
-      // ball (reactor glow + state)
-      const bx = arena.x + b.x * arena.w;
-      const by = arena.y + b.y * arena.h;
-      const br = b.r * arena.w;
-      const hot = effectsRef.current.dmgMs > 0;
-      const col0 = hot ? "rgba(255,90,120,0.9)" : "rgba(120,220,255,0.85)";
-      const col1 = hot ? "rgba(255,90,120,0.2)" : "rgba(120,220,255,0.22)";
-      const glow = ctx.createRadialGradient(bx, by, 1, bx, by, br * 3.6);
-      glow.addColorStop(0, col0);
-      glow.addColorStop(0.35, col1);
-      glow.addColorStop(1, "rgba(120,220,255,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(bx, by, br * 3.6, 0, Math.PI * 2);
-      ctx.fill();
+      // balls (reactor glow + state)
+      {
+        const hot = effectsRef.current.dmgMs > 0;
+        const col0 = hot ? "rgba(255,90,120,0.9)" : "rgba(120,220,255,0.85)";
+        const col1 = hot ? "rgba(255,90,120,0.2)" : "rgba(120,220,255,0.22)";
 
-      ctx.fillStyle = "rgba(230,250,255,0.95)";
-      ctx.beginPath();
-      ctx.arc(bx, by, br, 0, Math.PI * 2);
-      ctx.fill();
+        for (const b of ballsRef.current) {
+          const bx = arena.x + b.x * arena.w;
+          const by = arena.y + b.y * arena.h;
+          const br = b.r * arena.w;
+          const glow = ctx.createRadialGradient(bx, by, 1, bx, by, br * 3.6);
+          glow.addColorStop(0, col0);
+          glow.addColorStop(0.35, col1);
+          glow.addColorStop(1, "rgba(120,220,255,0)");
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(bx, by, br * 3.6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(230,250,255,0.95)";
+          ctx.beginPath();
+          ctx.arc(bx, by, br, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       // status / powerup timers
       ctx.fillStyle = "rgba(220,240,255,0.45)";
