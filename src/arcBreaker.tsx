@@ -856,7 +856,7 @@ export function ArcBreaker() {
               if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
               const cx = part.x + part.w * 0.5;
               const cy = part.y + part.h * 0.5;
-              const rr = 0.12; // match render scale
+              const rr = 0.145; // match render scale
               const dx = b.x - cx;
               const dy = b.y - cy;
               const d = Math.hypot(dx, dy);
@@ -883,7 +883,7 @@ export function ArcBreaker() {
             if (boss.phase >= 2 && boss.bossShieldHp > 0) {
               const cx = 0.5;
               const cy = 0.24;
-              const rr = 0.30;
+              const rr = 0.36;
               const dx = b.x - cx;
               const dy = b.y - cy;
               const d = Math.hypot(dx, dy);
@@ -915,7 +915,7 @@ export function ArcBreaker() {
               if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
               const cx = part.x + part.w * 0.5;
               const cy = part.y + part.h * 0.5;
-              const rr = 0.12;
+              const rr = 0.145;
               const d = Math.hypot(m.x - cx, m.y - cy);
               if (d < rr) {
                 part.shieldHp = Math.max(0, part.shieldHp - 1);
@@ -925,7 +925,7 @@ export function ArcBreaker() {
             }
             if (!hitShield && boss.phase >= 2 && boss.bossShieldHp > 0) {
               const d = Math.hypot(m.x - 0.5, m.y - 0.24);
-              if (d < 0.30) {
+              if (d < 0.36) {
                 boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
                 hitShield = true;
               }
@@ -1280,6 +1280,7 @@ export function ArcBreaker() {
       const boss2 = bossRef.current;
       if (boss2.active) {
         const spr = spritesRef.current;
+        const t = performance.now() / 1000;
 
         // subtle backdrop
         ctx.fillStyle = boss2.angry ? "rgba(255,90,120,0.055)" : "rgba(80,200,255,0.04)";
@@ -1381,7 +1382,8 @@ export function ArcBreaker() {
             ctx.translate(ax, ay);
             ctx.rotate(ang);
             const h = 34;
-            ctx.globalAlpha = part.shieldHp > 0 ? 0.75 : 0.45;
+            ctx.globalCompositeOperation = "screen";
+            ctx.globalAlpha = part.shieldHp > 0 ? 0.80 : 0.50;
             ctx.drawImage(spr.tether, 0, -h / 2, len, h);
             ctx.globalAlpha = 1;
             ctx.restore();
@@ -1395,9 +1397,12 @@ export function ArcBreaker() {
           if (spritesReady && boss2.phase >= 2 && boss2.bossShieldHp > 0 && shieldImg && shieldImg.complete) {
             const cx = arena.x + 0.5 * arena.w;
             const cy = arena.y + 0.24 * arena.h;
-            const rr = arena.w * 0.30;
+            const rr = arena.w * 0.36;
             const a = clamp(boss2.bossShieldHp / Math.max(1, boss2.bossShieldMax), 0, 1);
-            ctx.globalAlpha = 0.65 + 0.25 * a;
+            const pulse = 0.5 + 0.5 * Math.sin(t * 2.1);
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            ctx.globalAlpha = (0.60 + 0.30 * a) * (0.92 + 0.10 * pulse);
             ctx.drawImage(shieldImg, cx - rr, cy - rr, rr * 2, rr * 2);
 
             // crack overlay based on remaining HP
@@ -1406,6 +1411,7 @@ export function ArcBreaker() {
               ctx.globalAlpha = 0.35 + 0.35 * (1 - a);
               ctx.drawImage(crack, cx - rr, cy - rr, rr * 2, rr * 2);
             }
+            ctx.restore();
             ctx.globalAlpha = 1;
           }
         }
@@ -1418,20 +1424,25 @@ export function ArcBreaker() {
 
           if (part.shieldHp > 0 && spr.shieldAnchor && spr.shieldAnchor.complete) {
             const a = clamp(part.shieldHp / Math.max(1, part.shieldMax), 0, 1);
-            const rr = arena.w * 0.12;
-            ctx.globalAlpha = 0.55 + 0.30 * a;
+            const rr = arena.w * 0.145;
+            const pulse = 0.5 + 0.5 * Math.sin(t * 3.2 + ax * 0.01);
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            ctx.globalAlpha = (0.55 + 0.30 * a) * (0.92 + 0.10 * pulse);
             ctx.drawImage(spr.shieldAnchor, ax - rr, ay - rr, rr * 2, rr * 2);
             const crack = a < 0.34 ? spr.crackHeavy : a < 0.67 ? spr.crackLight : undefined;
             if (crack && crack.complete) {
-              ctx.globalAlpha = 0.35 + 0.35 * (1 - a);
+              ctx.globalAlpha = 0.30 + 0.45 * (1 - a);
               ctx.drawImage(crack, ax - rr, ay - rr, rr * 2, rr * 2);
             }
+            ctx.restore();
             ctx.globalAlpha = 1;
           }
 
           if (spr.anchor && spr.anchor.complete) {
-            const rr = arena.w * 0.09;
-            ctx.drawImage(spr.anchor, ax - rr, ay - rr, rr * 2, rr * 2);
+            const rr = arena.w * 0.105;
+            const wob = Math.sin(t * 2.6 + ax * 0.01) * 2;
+            ctx.drawImage(spr.anchor, ax - rr, ay - rr + wob, rr * 2, rr * 2);
           }
         }
 
@@ -1442,24 +1453,33 @@ export function ArcBreaker() {
           const exposed = boss2.phase >= 2 && boss2.bossShieldHp <= 0;
 
           if (spr.gearRing && spr.gearRing.complete) {
-            const rr = arena.w * 0.185;
-            ctx.globalAlpha = exposed ? 1 : 0.8;
-            ctx.drawImage(spr.gearRing, cx - rr, cy - rr, rr * 2, rr * 2);
+            const rr = arena.w * 0.22;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(t * 0.25);
+            ctx.globalAlpha = exposed ? 1 : 0.85;
+            ctx.drawImage(spr.gearRing, -rr, -rr, rr * 2, rr * 2);
             ctx.globalAlpha = 1;
+            ctx.restore();
           }
 
           if (spr.energyNodes && spr.energyNodes.complete) {
-            const rr = arena.w * 0.14;
-            ctx.globalAlpha = 0.85;
+            const rr = arena.w * 0.17;
+            const pulse = 0.5 + 0.5 * Math.sin(t * 6.0);
+            ctx.globalAlpha = 0.65 + 0.25 * pulse;
             ctx.drawImage(spr.energyNodes, cx - rr, cy - rr, rr * 2, rr * 2);
             ctx.globalAlpha = 1;
           }
 
           if (spr.core && spr.core.complete) {
-            const rr = arena.w * 0.16;
-            ctx.globalAlpha = exposed ? 1 : 0.85;
-            ctx.drawImage(spr.core, cx - rr, cy - rr, rr * 2, rr * 2);
+            const rr = arena.w * 0.19;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(-t * 0.18);
+            ctx.globalAlpha = exposed ? 1 : 0.9;
+            ctx.drawImage(spr.core, -rr, -rr, rr * 2, rr * 2);
             ctx.globalAlpha = 1;
+            ctx.restore();
           }
         }
 

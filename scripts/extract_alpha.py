@@ -9,7 +9,7 @@ Outputs cleaned RGBA PNG, cropped to content with padding, resized to 1024x1024.
 
 import os
 import sys
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageChops
 
 
 def clamp(x, a=0.0, b=1.0):
@@ -38,34 +38,72 @@ def rgb_to_hsv(r, g, b):
 def make_alpha(im: Image.Image) -> Image.Image:
     im = im.convert("RGB")
     w, h = im.size
+
+    # Estimate checkerboard background colors by sampling low-sat pixels
     px = im.load()
+    samples = []
+    step = max(4, min(w, h) // 64)
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            r, g, b = px[x, y]
+            _, s, v = rgb_to_hsv(r, g, b)
+            neutral = 1.0 - (abs(r - g) + abs(g - b) + abs(b - r)) / (3.0 * 255.0)
+            if s < 0.10 and neutral > 0.75 and v > 0.15:
+                samples.append((r, g, b))
+
+    # Fallback to corners if needed
+    if len(samples) < 50:
+        corners = [im.getpixel((2, 2)), im.getpixel((w - 3, 2)), im.getpixel((2, h - 3)), im.getpixel((w - 3, h - 3))]
+        samples = corners * 40
+
+    # crude 2-means clustering
+    c1 = samples[0]
+    c2 = samples[len(samples) // 2]
+    for _ in range(8):
+        a1 = [0, 0, 0, 0]
+        a2 = [0, 0, 0, 0]
+        for r, g, b in samples:
+            d1 = (r - c1[0]) ** 2 + (g - c1[1]) ** 2 + (b - c1[2]) ** 2
+            d2 = (r - c2[0]) ** 2 + (g - c2[1]) ** 2 + (b - c2[2]) ** 2
+            if d1 <= d2:
+                a1[0] += r; a1[1] += g; a1[2] += b; a1[3] += 1
+            else:
+                a2[0] += r; a2[1] += g; a2[2] += b; a2[3] += 1
+        if a1[3] > 0:
+            c1 = (a1[0] // a1[3], a1[1] // a1[3], a1[2] // a1[3])
+        if a2[3] > 0:
+            c2 = (a2[0] // a2[3], a2[1] // a2[3], a2[2] // a2[3])
+
     out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     opx = out.load()
 
-    # First pass: alpha from saturation + distance to neutral gray
+    # Alpha from: saturation + distance from either checker color + non-neutral bias
     for y in range(h):
         for x in range(w):
             r, g, b = px[x, y]
             _, s, v = rgb_to_hsv(r, g, b)
-            # neutral-ness: how close channels are
             neutral = 1.0 - (abs(r - g) + abs(g - b) + abs(b - r)) / (3.0 * 255.0)
 
-            # Background checkerboard is low saturation, high neutral.
-            # Keep colorful pixels; suppress neutral low-sat.
-            a = 0.0
-            a = max(a, (s - 0.10) / 0.35)  # color
-            a = max(a, (0.35 - neutral) / 0.35)  # non-neutral
+            d1 = (((r - c1[0]) / 255.0) ** 2 + ((g - c1[1]) / 255.0) ** 2 + ((b - c1[2]) / 255.0) ** 2) ** 0.5
+            d2 = (((r - c2[0]) / 255.0) ** 2 + ((g - c2[1]) / 255.0) ** 2 + ((b - c2[2]) / 255.0) ** 2) ** 0.5
+            dist = d1 if d1 < d2 else d2
 
-            # Preserve bright highlights even if low saturation
-            a = max(a, (v - 0.70) / 0.30 * (1.0 - neutral) * 1.2)
+            a = 0.0
+            a = max(a, (dist - 0.05) / 0.18)              # foreground vs bg
+            a = max(a, (s - 0.08) / 0.30)                 # keep color
+            a = max(a, (0.30 - neutral) / 0.30)           # non-neutral
+            a = max(a, (v - 0.80) / 0.20 * 0.9)           # keep bright highlights
 
             a = clamp(a, 0.0, 1.0)
             opx[x, y] = (r, g, b, int(a * 255))
 
-    # Feather edges slightly
+    # Clean / sharpen alpha edges
     alpha = out.split()[-1]
-    alpha = alpha.filter(ImageFilter.GaussianBlur(radius=0.8))
+    alpha = alpha.filter(ImageFilter.GaussianBlur(radius=0.6))
     out.putalpha(alpha)
+
+    # Unsharp mask to counter resize blur
+    out = out.filter(ImageFilter.UnsharpMask(radius=1.6, percent=120, threshold=3))
     return out
 
 
