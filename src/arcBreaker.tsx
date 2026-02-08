@@ -99,13 +99,42 @@ export function ArcBreaker() {
     phase: 0 | 1 | 2 | 3;
     coreHp: number;
     vulnMs: number; // remaining vulnerable window
-    parts: { kind: "anchor" | "core"; x: number; y: number; w: number; h: number; hp: number }[];
+    parts: {
+      kind: "anchor" | "core";
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      hp: number;
+      shieldHp: number;
+      shieldMax: number;
+      flashMs: number;
+    }[];
 
-    // attack: shield sweep (telegraphed)
+    // main boss bubble shield (glass)
+    bossShieldHp: number;
+    bossShieldMax: number;
+
+    // attack: anger sweep (telegraphed, not always on)
+    angry: boolean;
+    angerMs: number;
     sweepX: number; // normalized center
     sweepV: number;
     sweepWarnMs: number;
-  }>({ active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [], sweepX: 0.5, sweepV: 0.25, sweepWarnMs: 0 });
+  }>({
+    active: false,
+    phase: 0,
+    coreHp: 0,
+    vulnMs: 0,
+    parts: [],
+    bossShieldHp: 0,
+    bossShieldMax: 0,
+    angry: false,
+    angerMs: 0,
+    sweepX: 0.5,
+    sweepV: 0.25,
+    sweepWarnMs: 0,
+  });
 
   const dpr = typeof window !== "undefined" ? Math.max(1, Math.min(3, window.devicePixelRatio || 1)) : 1;
 
@@ -158,7 +187,20 @@ export function ArcBreaker() {
     laserTickMsRef.current = 0;
     powerSpawnMsRef.current = 0;
 
-    bossRef.current = { active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [], sweepX: 0.5, sweepV: 0.25, sweepWarnMs: 0 };
+    bossRef.current = {
+      active: false,
+      phase: 0,
+      coreHp: 0,
+      vulnMs: 0,
+      parts: [],
+      bossShieldHp: 0,
+      bossShieldMax: 0,
+      angry: false,
+      angerMs: 0,
+      sweepX: 0.5,
+      sweepV: 0.25,
+      sweepWarnMs: 0,
+    };
 
     const bricks: Brick[] = [];
     const cols = 9;
@@ -197,11 +239,11 @@ export function ArcBreaker() {
     bricksRef.current = [];
 
     const parts = [
-      { kind: "anchor" as const, x: 0.12, y: 0.14, w: 0.14, h: 0.07, hp: 6 },
-      { kind: "anchor" as const, x: 0.74, y: 0.14, w: 0.14, h: 0.07, hp: 6 },
-      { kind: "anchor" as const, x: 0.12, y: 0.26, w: 0.14, h: 0.07, hp: 6 },
-      { kind: "anchor" as const, x: 0.74, y: 0.26, w: 0.14, h: 0.07, hp: 6 },
-      { kind: "core" as const, x: 0.38, y: 0.18, w: 0.24, h: 0.18, hp: 36 },
+      { kind: "anchor" as const, x: 0.12, y: 0.14, w: 0.14, h: 0.07, hp: 6, shieldHp: 4, shieldMax: 4, flashMs: 0 },
+      { kind: "anchor" as const, x: 0.74, y: 0.14, w: 0.14, h: 0.07, hp: 6, shieldHp: 4, shieldMax: 4, flashMs: 0 },
+      { kind: "anchor" as const, x: 0.12, y: 0.26, w: 0.14, h: 0.07, hp: 6, shieldHp: 4, shieldMax: 4, flashMs: 0 },
+      { kind: "anchor" as const, x: 0.74, y: 0.26, w: 0.14, h: 0.07, hp: 6, shieldHp: 4, shieldMax: 4, flashMs: 0 },
+      { kind: "core" as const, x: 0.38, y: 0.18, w: 0.24, h: 0.18, hp: 36, shieldHp: 0, shieldMax: 0, flashMs: 0 },
     ];
 
     bossRef.current = {
@@ -210,6 +252,10 @@ export function ArcBreaker() {
       coreHp: 36,
       vulnMs: 0,
       parts,
+      bossShieldHp: 10,
+      bossShieldMax: 10,
+      angry: false,
+      angerMs: 0,
       sweepX: 0.5,
       sweepV: 0.34,
       sweepWarnMs: 1200,
@@ -565,7 +611,27 @@ export function ArcBreaker() {
             } else if (pu.kind === "wide") {
               fx.wideMs = 12_000;
             } else if (pu.kind === "multiball") {
+              // spawn extra balls immediately (visible effect)
               fx.multiballMs = 8_000;
+              const base = ballsRef.current[0] || { x: p.x, y: 0.86, vx: 0.2, vy: -0.6, r: 0.018, spin: 0 };
+              const mk = (ang: number) => {
+                const sp = Math.max(0.55, Math.hypot(base.vx, base.vy));
+                return {
+                  x: base.x,
+                  y: base.y,
+                  vx: Math.cos(ang) * sp,
+                  vy: -Math.abs(Math.sin(ang)) * sp,
+                  r: base.r,
+                  spin: base.spin,
+                };
+              };
+              // cap to avoid chaos/perf issues
+              if (ballsRef.current.length < 4) {
+                ballsRef.current.push(mk(Math.PI * 0.78));
+              }
+              if (ballsRef.current.length < 4) {
+                ballsRef.current.push(mk(Math.PI * 0.62));
+              }
             }
             sfx("power");
             powerUpsRef.current.splice(i, 1);
@@ -605,17 +671,40 @@ export function ArcBreaker() {
           }
         }
 
-        // boss parts (reduced)
+        // boss anchors + boss shield/core
         const boss = bossRef.current;
-        if (boss.active && boss.phase === 2 && boss.vulnMs > 0) {
+        if (boss.active) {
+          // anchors: strip shield first
           for (const part of boss.parts) {
-            if (part.kind !== "core" || part.hp <= 0) continue;
+            if (part.kind !== "anchor" || part.hp <= 0) continue;
             if (lx >= part.x && lx <= part.x + part.w) {
-              // laser is precision, not raw DPS
-              part.hp -= 1;
-              boss.coreHp = part.hp;
+              if (part.shieldHp > 0) {
+                part.shieldHp = Math.max(0, part.shieldHp - 1);
+              } else {
+                part.hp -= 1;
+              }
               scoreRef.current += 1;
               break;
+            }
+          }
+
+          // main boss shield (after anchors are down)
+          const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
+          if (!anchorsAlive && boss.bossShieldHp > 0) {
+            boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
+            scoreRef.current += 1;
+          }
+
+          // core only after shield is down
+          if (!anchorsAlive && boss.bossShieldHp <= 0) {
+            for (const part of boss.parts) {
+              if (part.kind !== "core" || part.hp <= 0) continue;
+              if (lx >= part.x && lx <= part.x + part.w) {
+                part.hp -= 1;
+                boss.coreHp = part.hp;
+                scoreRef.current += 1;
+                break;
+              }
             }
           }
         }
@@ -706,57 +795,66 @@ export function ArcBreaker() {
         if (boss.active) {
           boss.vulnMs = Math.max(0, boss.vulnMs - dt * 1000);
 
-          // shield sweep telegraph -> active
-          boss.sweepWarnMs = Math.max(0, boss.sweepWarnMs - dt * 1000);
-          if (boss.sweepWarnMs <= 0) {
-            boss.sweepX += boss.sweepV * dt;
-            if (boss.sweepX < 0.08) {
-              boss.sweepX = 0.08;
-              boss.sweepV *= -1;
-              boss.sweepWarnMs = 650; // brief telegraph on direction change
-            }
-            if (boss.sweepX > 0.92) {
-              boss.sweepX = 0.92;
-              boss.sweepV *= -1;
-              boss.sweepWarnMs = 650;
-            }
+          // anger sweep: only active when boss is mad
+          boss.angerMs = Math.max(0, boss.angerMs - dt * 1000);
+          boss.angry = boss.angerMs > 0;
 
-            // collision: a thin vertical barrier in the upper arena
-            const wallX0 = boss.sweepX - 0.012;
-            const wallX1 = boss.sweepX + 0.012;
-            const wallY0 = 0.06;
-            const wallY1 = 0.62;
-            for (const b of ballsRef.current) {
-              if (b.x + b.r >= wallX0 && b.x - b.r <= wallX1 && b.y >= wallY0 && b.y <= wallY1) {
-                b.vx *= -1;
-                b.spin = clamp(b.spin + boss.sweepV * 1.4, -3, 3);
-                screenShakeRef.current = Math.max(screenShakeRef.current, 0.35);
-                sfx("hit");
+          // occasionally trigger anger (telegraph first)
+          if (!boss.angry && Math.random() < dt * 0.12) {
+            boss.angerMs = 3200;
+            boss.sweepWarnMs = 850;
+            sfx("laser");
+          }
+
+          if (boss.angry) {
+            boss.sweepWarnMs = Math.max(0, boss.sweepWarnMs - dt * 1000);
+            if (boss.sweepWarnMs <= 0) {
+              boss.sweepX += boss.sweepV * dt;
+              if (boss.sweepX < 0.08) {
+                boss.sweepX = 0.08;
+                boss.sweepV *= -1;
+              }
+              if (boss.sweepX > 0.92) {
+                boss.sweepX = 0.92;
+                boss.sweepV *= -1;
+              }
+
+              // collision: a thin vertical barrier in the upper arena that SPEEDS the ball
+              const wallX0 = boss.sweepX - 0.012;
+              const wallX1 = boss.sweepX + 0.012;
+              const wallY0 = 0.06;
+              const wallY1 = 0.62;
+              for (const b of ballsRef.current) {
+                if (b.x + b.r >= wallX0 && b.x - b.r <= wallX1 && b.y >= wallY0 && b.y <= wallY1) {
+                  b.vx *= -1;
+                  const sp = Math.hypot(b.vx, b.vy);
+                  const boost = 1.18;
+                  const ns = Math.max(0.0001, Math.hypot(b.vx, b.vy));
+                  b.vx = (b.vx / ns) * sp * boost;
+                  b.vy = (b.vy / ns) * sp * boost;
+                  b.spin = clamp(b.spin + boss.sweepV * 1.8, -3, 3);
+                  screenShakeRef.current = Math.max(screenShakeRef.current, 0.45);
+                  sfx("hit");
+                }
               }
             }
           }
 
           const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
           if (!anchorsAlive && boss.phase === 1) {
+            // A: anchors down => now you can break the main boss shield (no regen)
             boss.phase = 2;
-            boss.vulnMs = 4500;
+            boss.vulnMs = 999_999; // keep phase alive; we won't rely on timers for this flow
             slowmoMsRef.current = Math.max(slowmoMsRef.current, 120);
             sfx("power");
-          }
-          if (boss.phase === 2 && boss.vulnMs <= 0) {
-            boss.phase = 1;
-            boss.sweepWarnMs = Math.max(boss.sweepWarnMs, 650);
-            for (const p of boss.parts) {
-              if (p.kind === "anchor") p.hp = Math.max(p.hp, 3);
-            }
           }
 
           for (const b of ballsRef.current) {
             for (const part of boss.parts) {
               if (part.hp <= 0) continue;
               if (part.kind === "core") {
-                const coreVulnerable = boss.phase === 2 && boss.vulnMs > 0;
-                if (!coreVulnerable) continue;
+                // core can only be hit after main boss shield is broken
+                if (boss.bossShieldHp > 0) continue;
               }
 
               const x0 = part.x;
@@ -772,20 +870,51 @@ export function ArcBreaker() {
                 if (Math.abs(dx) > Math.abs(dy)) b.vx *= -1;
                 else b.vy *= -1;
 
-                part.hp -= 1;
-                scoreRef.current += part.kind === "core" ? 50 : 20;
-                screenShakeRef.current = Math.max(screenShakeRef.current, part.kind === "core" ? 0.9 : 0.5);
-                sfx(part.kind === "core" ? "break" : "hit");
+                // shield-first for anchors; then hp
+                const dmg = Math.max(1, Math.round(effectsRef.current.dmgMult));
+                if (part.kind === "anchor" && part.shieldHp > 0) {
+                  part.shieldHp = Math.max(0, part.shieldHp - dmg);
+                  part.flashMs = 180;
+                  scoreRef.current += 10;
+                  screenShakeRef.current = Math.max(screenShakeRef.current, 0.45);
+                  sfx("hit");
 
-                if (part.kind === "core") {
-                  boss.coreHp = part.hp;
-                  if (part.hp <= 0) {
-                    boss.phase = 3;
-                    boss.active = false;
-                    modeRef.current = "win";
-                    stageClearMsRef.current = 0;
-                    slowmoMsRef.current = Math.max(slowmoMsRef.current, 140);
-                    sfx("win");
+                  if (part.shieldHp === 0) {
+                    // dramatic bubble pop
+                    slowmoMsRef.current = Math.max(slowmoMsRef.current, 80);
+                    screenShakeRef.current = Math.max(screenShakeRef.current, 0.85);
+                    sfx("break");
+                    for (let k = 0; k < 18; k++) {
+                      const a = Math.random() * Math.PI * 2;
+                      const sp = 0.35 + Math.random() * 0.9;
+                      particlesRef.current.push({
+                        x: part.x + part.w * 0.5,
+                        y: part.y + part.h * 0.5,
+                        vx: Math.cos(a) * sp,
+                        vy: Math.sin(a) * sp,
+                        life: 320 + Math.random() * 240,
+                        maxLife: 560,
+                        r: 0.006 + Math.random() * 0.01,
+                        color: "rgba(180,240,255,0.95)",
+                      });
+                    }
+                  }
+                } else {
+                  part.hp -= dmg;
+                  scoreRef.current += part.kind === "core" ? 50 : 20;
+                  screenShakeRef.current = Math.max(screenShakeRef.current, part.kind === "core" ? 0.9 : 0.5);
+                  sfx(part.kind === "core" ? "break" : "hit");
+
+                  if (part.kind === "core") {
+                    boss.coreHp = part.hp;
+                    if (part.hp <= 0) {
+                      boss.phase = 3;
+                      boss.active = false;
+                      modeRef.current = "win";
+                      stageClearMsRef.current = 0;
+                      slowmoMsRef.current = Math.max(slowmoMsRef.current, 140);
+                      sfx("win");
+                    }
                   }
                 }
                 break;
@@ -897,13 +1026,17 @@ export function ArcBreaker() {
       // boss render (Warden Prism scaffolding)
       const boss2 = bossRef.current;
       if (boss2.active) {
-        // sweep telegraph / barrier
-        {
+        // subtle backdrop
+        ctx.fillStyle = boss2.angry ? "rgba(255,90,120,0.055)" : "rgba(80,200,255,0.04)";
+        ctx.fillRect(arena.x, arena.y, arena.w, arena.h * 0.42);
+
+        // anger sweep visual only when angry
+        if (boss2.angry) {
           const x = arena.x + boss2.sweepX * arena.w;
           const y0 = arena.y + 0.06 * arena.h;
           const y1 = arena.y + 0.62 * arena.h;
           if (boss2.sweepWarnMs > 0) {
-            ctx.strokeStyle = "rgba(255,90,200,0.35)";
+            ctx.strokeStyle = "rgba(255,90,120,0.35)";
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 6]);
             ctx.beginPath();
@@ -912,17 +1045,42 @@ export function ArcBreaker() {
             ctx.stroke();
             ctx.setLineDash([]);
           } else {
-            ctx.strokeStyle = "rgba(255,90,200,0.55)";
-            ctx.lineWidth = 6;
+            // red hot beam
+            ctx.strokeStyle = "rgba(255,90,120,0.65)";
+            ctx.lineWidth = 7;
+            ctx.beginPath();
+            ctx.moveTo(x, y0);
+            ctx.lineTo(x, y1);
+            ctx.stroke();
+            ctx.strokeStyle = "rgba(255,200,200,0.35)";
+            ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(x, y0);
             ctx.lineTo(x, y1);
             ctx.stroke();
           }
         }
-        // subtle backdrop
-        ctx.fillStyle = "rgba(80,200,255,0.04)";
-        ctx.fillRect(arena.x, arena.y, arena.w, arena.h * 0.42);
+
+        // main glass bubble shield (phase 1/2)
+        if (boss2.bossShieldHp > 0) {
+          const cx = arena.x + 0.5 * arena.w;
+          const cy = arena.y + 0.24 * arena.h;
+          const rr = arena.w * 0.26;
+          const a = clamp(boss2.bossShieldHp / Math.max(1, boss2.bossShieldMax), 0, 1);
+          const gg = ctx.createRadialGradient(cx, cy, rr * 0.1, cx, cy, rr);
+          gg.addColorStop(0, `rgba(160,230,255,${0.06 + 0.10 * a})`);
+          gg.addColorStop(0.55, `rgba(120,200,255,${0.10 + 0.18 * a})`);
+          gg.addColorStop(1, "rgba(120,200,255,0)");
+          ctx.fillStyle = gg;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = `rgba(220,250,255,${0.18 + 0.28 * a})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr * 0.98, 0, Math.PI * 2);
+          ctx.stroke();
+        }
 
         for (const part of boss2.parts) {
           if (part.hp <= 0) continue;
@@ -932,22 +1090,31 @@ export function ArcBreaker() {
           const h = part.h * arena.h;
 
           const isCore = part.kind === "core";
-          const coreVulnerable = isCore && boss2.phase === 2 && boss2.vulnMs > 0;
 
-          ctx.fillStyle = isCore
-            ? coreVulnerable
-              ? "rgba(255,90,200,0.85)"
-              : "rgba(180,200,255,0.18)"
-            : "rgba(255,190,80,0.82)";
+          // anchors: draw glass bubble shield
+          if (!isCore && part.shieldHp > 0) {
+            const cx = x + w * 0.5;
+            const cy = y + h * 0.5;
+            const rr = Math.max(w, h) * 0.72;
+            const a = clamp(part.shieldHp / Math.max(1, part.shieldMax), 0, 1);
+            const gg = ctx.createRadialGradient(cx, cy, rr * 0.15, cx, cy, rr);
+            gg.addColorStop(0, `rgba(160,230,255,${0.07 + 0.10 * a})`);
+            gg.addColorStop(0.6, `rgba(120,200,255,${0.12 + 0.22 * a})`);
+            gg.addColorStop(1, "rgba(120,200,255,0)");
+            ctx.fillStyle = gg;
+            ctx.beginPath();
+            ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = `rgba(230,255,255,${0.14 + 0.26 * a})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, rr * 0.98, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          // body/core visuals
+          ctx.fillStyle = isCore ? "rgba(255,90,200,0.55)" : "rgba(255,190,80,0.75)";
           ctx.fillRect(x, y, w, h);
-
-          // hp pips
-          ctx.fillStyle = "rgba(0,0,0,0.25)";
-          ctx.fillRect(x, y + h - 4, w, 4);
-          ctx.fillStyle = isCore ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.55)";
-          const frac = clamp(part.hp / (isCore ? 36 : 6), 0, 1);
-          ctx.fillRect(x, y + h - 4, w * frac, 4);
-
           ctx.strokeStyle = "rgba(255,255,255,0.16)";
           ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
         }
@@ -955,7 +1122,7 @@ export function ArcBreaker() {
         // boss status text
         ctx.fillStyle = "rgba(220,240,255,0.5)";
         ctx.font = "600 13px system-ui, -apple-system, Segoe UI, Roboto";
-        const msg = boss2.phase === 1 ? "BOSS: Warden Prism — break anchors" : "BOSS: CORE VULNERABLE";
+        const msg = boss2.phase === 1 ? "BOSS: Warden Prism — break anchors" : boss2.bossShieldHp > 0 ? "BOSS: BREAK MAIN SHIELD" : "BOSS: CORE EXPOSED";
         ctx.fillText(msg, arena.x + 8, arena.y + 18);
       }
 
@@ -1008,20 +1175,41 @@ export function ArcBreaker() {
         ctx.fillRect(x - 2, y - 10, 4, 12);
       }
 
-      // laser beam (visual)
+      // laser beam (visual) — animated: ramps up from paddle, pulses, glows
       if (effectsRef.current.laserMs > 0) {
         const lx = arena.x + paddleRef.current.x * arena.w;
-        ctx.strokeStyle = "rgba(255,90,200,0.55)";
+        const t = performance.now() / 1000;
+        const total = 3500;
+        const age = clamp((total - effectsRef.current.laserMs) / 140, 0, 1); // quick ramp-in
+        const yStart = arena.y + arena.h * 0.92;
+        const yEndFull = arena.y + arena.h * 0.02;
+        const yEnd = yStart + (yEndFull - yStart) * age;
+
+        const pulse = 0.5 + 0.5 * Math.sin(t * 18);
+        const wobble = Math.sin(t * 9) * 1.5;
+
+        // outer glow
+        ctx.strokeStyle = `rgba(255,90,200,${0.18 + 0.18 * pulse})`;
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.moveTo(lx + wobble, yStart);
+        ctx.lineTo(lx + wobble, yEnd);
+        ctx.stroke();
+
+        // core beam
+        ctx.strokeStyle = `rgba(255,180,240,${0.40 + 0.25 * pulse})`;
         ctx.lineWidth = 6;
         ctx.beginPath();
-        ctx.moveTo(lx, arena.y + arena.h * 0.92);
-        ctx.lineTo(lx, arena.y + arena.h * 0.02);
+        ctx.moveTo(lx, yStart);
+        ctx.lineTo(lx, yEnd);
         ctx.stroke();
-        ctx.strokeStyle = "rgba(255,180,240,0.45)";
+
+        // hot center
+        ctx.strokeStyle = `rgba(255,255,255,${0.22 + 0.18 * pulse})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(lx, arena.y + arena.h * 0.92);
-        ctx.lineTo(lx, arena.y + arena.h * 0.02);
+        ctx.moveTo(lx, yStart);
+        ctx.lineTo(lx, yEnd);
         ctx.stroke();
       }
 
@@ -1041,7 +1229,7 @@ export function ArcBreaker() {
         const x = arena.x + t.x * arena.w;
         const y = arena.y + t.y * arena.h;
         const a = clamp(t.life / 160, 0, 1);
-        ctx.fillStyle = `rgba(120,220,255,-e)`;
+        ctx.fillStyle = `rgba(120,220,255,${0.10 * a})`;
         ctx.beginPath();
         ctx.arc(x, y, 6 * (0.8 + 0.8 * a), 0, Math.PI * 2);
         ctx.fill();
