@@ -12,7 +12,14 @@ type Particle = { x: number; y: number; vx: number; vy: number; life: number; ma
 
 type PowerUpKind = "dmg" | "missiles" | "laser" | "multiball" | "wide";
 
-type PowerUp = { kind: PowerUpKind; x: number; y: number; vy: number; ttl: number };
+type PowerUp = {
+  kind: PowerUpKind;
+  x: number;
+  y: number;
+  vy: number;
+  ttl: number;
+  color: string;
+};
 
 type Missile = { x: number; y: number; vy: number; ttl: number };
 
@@ -74,6 +81,7 @@ export function ArcBreaker() {
   const modeRef = useRef<"stage" | "boss" | "win">("stage");
   const stageClearMsRef = useRef(0);
   const laserTickMsRef = useRef(0);
+  const powerSpawnMsRef = useRef(0);
 
   // boss scaffolding (end-of-run)
   const bossRef = useRef<{
@@ -133,6 +141,7 @@ export function ArcBreaker() {
     modeRef.current = "stage";
     stageClearMsRef.current = 0;
     laserTickMsRef.current = 0;
+    powerSpawnMsRef.current = 0;
 
     bossRef.current = { active: false, phase: 0, coreHp: 0, vulnMs: 0, parts: [] };
 
@@ -167,6 +176,7 @@ export function ArcBreaker() {
       wideMs: 0,
     };
     screenShakeRef.current = 0;
+    powerSpawnMsRef.current = 0;
 
     // clear stage bricks for boss arena
     bricksRef.current = [];
@@ -277,16 +287,43 @@ export function ArcBreaker() {
       fx.wideMs = Math.max(0, fx.wideMs - dt * 1000);
       fx.missileCooldownMs = Math.max(0, fx.missileCooldownMs - dt * 1000);
       laserTickMsRef.current = Math.max(0, laserTickMsRef.current - dt * 1000);
+      powerSpawnMsRef.current = Math.max(0, powerSpawnMsRef.current - dt * 1000);
       if (fx.dmgMs <= 0) fx.dmgMult = 1;
+      if (fx.laserMs <= 0) laserTickMsRef.current = 0;
 
       // widen paddle if active
       paddleRef.current.w = fx.wideMs > 0 ? 0.30 : 0.22;
 
+      // timed power spawns (not tied to brick breaks; also works on boss)
+      if (modeRef.current !== "win" && powerSpawnMsRef.current <= 0) {
+        const base = bossRef.current.active ? 6500 : 5200;
+        powerSpawnMsRef.current = base + Math.random() * 2600;
+
+        // spawn near top/mid so it has time to fall into thumb zone
+        const x = 0.12 + Math.random() * 0.76;
+        const y = bossRef.current.active ? 0.18 : 0.22;
+
+        const roll = Math.random();
+        const kind: PowerUpKind =
+          roll < 0.22
+            ? "dmg"
+            : roll < 0.42
+              ? "missiles"
+              : roll < 0.56
+                ? "laser"
+                : roll < 0.74
+                  ? "wide"
+                  : "multiball";
+
+        const palette = ["#66E6FF", "#FF5AC8", "#FFBE50", "#8CFFA0", "#FF5A78", "#B67CFF"];
+        const color = palette[(Math.random() * palette.length) | 0];
+        powerUpsRef.current.push({ kind, x, y, vy: 0.52, ttl: 12_000, color });
+      }
+
       // missiles spawn
       if (fx.missilesMs > 0 && fx.missileCooldownMs <= 0) {
-        fx.missileCooldownMs = 220;
+        fx.missileCooldownMs = 240;
         missilesRef.current.push({ x: paddleRef.current.x, y: 0.92, vy: -1.35, ttl: 1600 });
-        sfx("power");
       }
 
       // update missiles
@@ -423,24 +460,7 @@ export function ArcBreaker() {
             }
 
             if (br.hp <= 0) {
-              // chance to drop powerup
-              if (Math.random() < 0.22) {
-                const roll = Math.random();
-                const kind: PowerUpKind =
-                  roll < 0.26
-                    ? "dmg"
-                    : roll < 0.48
-                      ? "missiles"
-                      : roll < 0.62
-                        ? "laser"
-                        : roll < 0.78
-                          ? "wide"
-                          : "multiball";
-                powerUpsRef.current.push({ kind, x: (x0 + x1) * 0.5, y: (y0 + y1) * 0.5, vy: 0.55, ttl: 9000 });
-                sfx("break");
-              } else {
-                sfx("break");
-              }
+              sfx("break");
               bricks.splice(i, 1);
               i--;
             }
@@ -650,6 +670,8 @@ export function ArcBreaker() {
 
             part.hp -= 1;
             scoreRef.current += part.kind === "core" ? 50 : 20;
+            screenShakeRef.current = Math.max(screenShakeRef.current, part.kind === "core" ? 0.9 : 0.5);
+            sfx(part.kind === "core" ? "break" : "hit");
 
             if (part.kind === "core") {
               boss.coreHp = part.hp;
@@ -794,28 +816,45 @@ export function ArcBreaker() {
         ctx.fillText(msg, arena.x + 8, arena.y + 18);
       }
 
-      // powerups (falling)
+      // win overlay
+      if (modeRef.current === "win") {
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(arena.x, arena.y, arena.w, arena.h);
+        ctx.fillStyle = "rgba(240,250,255,0.92)";
+        ctx.font = "800 22px system-ui, -apple-system, Segoe UI, Roboto";
+        ctx.fillText("RUN COMPLETE", arena.x + 18, arena.y + arena.h * 0.5);
+        ctx.fillStyle = "rgba(200,230,255,0.75)";
+        ctx.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto";
+        ctx.fillText("restarting…", arena.x + 18, arena.y + arena.h * 0.5 + 22);
+      }
+
+      // powerups (falling) — pretty colors, no text
       for (const pu of powerUpsRef.current) {
         const x = arena.x + pu.x * arena.w;
         const y = arena.y + pu.y * arena.h;
-        const rr = 10;
-        ctx.fillStyle =
-          pu.kind === "dmg"
-            ? "rgba(255,90,120,0.9)"
-            : pu.kind === "missiles"
-              ? "rgba(255,190,80,0.9)"
-              : pu.kind === "laser"
-                ? "rgba(255,90,200,0.9)"
-                : pu.kind === "wide"
-                  ? "rgba(120,220,255,0.9)"
-                  : "rgba(140,255,160,0.9)";
+        const rr = 11;
+
+        // glow
+        const gg = ctx.createRadialGradient(x, y, 1, x, y, rr * 3);
+        gg.addColorStop(0, `${pu.color}CC`);
+        gg.addColorStop(0.35, `${pu.color}55`);
+        gg.addColorStop(1, `${pu.color}00`);
+        ctx.fillStyle = gg;
+        ctx.beginPath();
+        ctx.arc(x, y, rr * 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // core orb
+        ctx.fillStyle = pu.color;
         ctx.beginPath();
         ctx.arc(x, y, rr, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.font = "700 11px system-ui, -apple-system, Segoe UI, Roboto";
-        const label = pu.kind === "dmg" ? "DMG" : pu.kind === "missiles" ? "MSL" : pu.kind === "laser" ? "LAS" : pu.kind === "wide" ? "WID" : "MB";
-        ctx.fillText(label, x - 12, y + 4);
+
+        // highlight
+        ctx.fillStyle = "rgba(255,255,255,0.35)";
+        ctx.beginPath();
+        ctx.arc(x - 4, y - 4, rr * 0.35, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // missiles
