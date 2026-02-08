@@ -261,6 +261,7 @@ export function ArcBreaker() {
   }
 
   function startBoss() {
+    ensureSprites();
     // Warden Prism (first end-of-run boss): break anchors → expose core windows → finish.
     paddleRef.current = { x: 0.5, w: 0.22 };
     ballsRef.current = [{ x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018, spin: 0, baseSp: 0.66 }];
@@ -311,6 +312,8 @@ export function ArcBreaker() {
 
   useEffect(() => {
     reset();
+    // start loading sprites asap
+    ensureSprites();
   }, []);
 
   useEffect(() => {
@@ -1219,8 +1222,58 @@ export function ArcBreaker() {
           }
         }
 
+        const spritesReady = !!(
+          spr.core?.complete &&
+          spr.anchor?.complete &&
+          spr.shieldAnchor?.complete &&
+          (spr.shieldBossAlt?.complete || spr.shieldBoss?.complete)
+        );
+
+        // fallback render if sprites not ready yet
+        if (!spritesReady) {
+          // main shield
+          if (boss2.bossShieldHp > 0) {
+            const cx = arena.x + 0.5 * arena.w;
+            const cy = arena.y + 0.24 * arena.h;
+            const rr = arena.w * 0.30;
+            ctx.strokeStyle = "rgba(160,230,255,0.35)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          // anchors
+          for (const part of boss2.parts) {
+            if (part.kind !== "anchor" || part.hp <= 0) continue;
+            const ax = arena.x + (part.x + part.w * 0.5) * arena.w;
+            const ay = arena.y + (part.y + part.h * 0.5) * arena.h;
+            const rr = arena.w * 0.07;
+            if (part.shieldHp > 0) {
+              ctx.strokeStyle = "rgba(160,230,255,0.28)";
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(ax, ay, rr * 1.35, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            ctx.fillStyle = "rgba(255,190,80,0.65)";
+            ctx.beginPath();
+            ctx.arc(ax, ay, rr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // core
+          {
+            const cx = arena.x + 0.5 * arena.w;
+            const cy = arena.y + 0.24 * arena.h;
+            const rr = arena.w * 0.08;
+            ctx.fillStyle = "rgba(255,90,200,0.55)";
+            ctx.beginPath();
+            ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
         // tethers (anchor -> core)
-        if (spr.tether && spr.tether.complete) {
+        if (spritesReady && spr.tether && spr.tether.complete) {
           const coreC = { x: arena.x + 0.5 * arena.w, y: arena.y + 0.24 * arena.h };
           for (const part of boss2.parts) {
             if (part.kind !== "anchor" || part.hp <= 0) continue;
@@ -1245,7 +1298,7 @@ export function ArcBreaker() {
         // main boss bubble shield (sprite)
         {
           const shieldImg = spr.shieldBossAlt && spr.shieldBossAlt.complete ? spr.shieldBossAlt : spr.shieldBoss;
-          if (boss2.bossShieldHp > 0 && shieldImg && shieldImg.complete) {
+          if (spritesReady && boss2.bossShieldHp > 0 && shieldImg && shieldImg.complete) {
             const cx = arena.x + 0.5 * arena.w;
             const cy = arena.y + 0.24 * arena.h;
             const rr = arena.w * 0.30;
@@ -1264,7 +1317,7 @@ export function ArcBreaker() {
         }
 
         // anchors + their bubble shields (sprites)
-        for (const part of boss2.parts) {
+        if (spritesReady) for (const part of boss2.parts) {
           if (part.kind !== "anchor" || part.hp <= 0) continue;
           const ax = arena.x + (part.x + part.w * 0.5) * arena.w;
           const ay = arena.y + (part.y + part.h * 0.5) * arena.h;
@@ -1289,7 +1342,7 @@ export function ArcBreaker() {
         }
 
         // boss core (layered sprites)
-        {
+        if (spritesReady) {
           const cx = arena.x + 0.5 * arena.w;
           const cy = arena.y + 0.24 * arena.h;
           const exposed = boss2.phase >= 2 && boss2.bossShieldHp <= 0;
