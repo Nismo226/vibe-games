@@ -252,8 +252,8 @@ export function ArcBreaker() {
       coreHp: 36,
       vulnMs: 0,
       parts,
-      bossShieldHp: 10,
-      bossShieldMax: 10,
+      bossShieldHp: 6,
+      bossShieldMax: 6,
       angry: false,
       angerMs: 0,
       sweepX: 0.5,
@@ -896,6 +896,23 @@ export function ArcBreaker() {
                         maxLife: 560,
                         r: 0.006 + Math.random() * 0.01,
                         color: "rgba(180,240,255,0.95)",
+                      });
+                    }
+                  } else if (part.shieldHp === 2) {
+                    // crack stage: extra shard burst (no slowmo)
+                    sfx("hit");
+                    for (let k = 0; k < 10; k++) {
+                      const a = Math.random() * Math.PI * 2;
+                      const sp = 0.25 + Math.random() * 0.55;
+                      particlesRef.current.push({
+                        x: part.x + part.w * 0.5,
+                        y: part.y + part.h * 0.5,
+                        vx: Math.cos(a) * sp,
+                        vy: Math.sin(a) * sp,
+                        life: 220 + Math.random() * 180,
+                        maxLife: 420,
+                        r: 0.004 + Math.random() * 0.007,
+                        color: "rgba(200,250,255,0.75)",
                       });
                     }
                   }
