@@ -58,8 +58,8 @@ export function ArcBreaker() {
   // sim state (refs so we can run in rAF)
   const paddleRef = useRef({ x: 0.5, w: 0.22 }); // normalized 0..1, width as fraction of arena width
 
-  type Ball = { x: number; y: number; vx: number; vy: number; r: number };
-  const ballsRef = useRef<Ball[]>([{ x: 0.5, y: 0.72, vx: 0.25, vy: -0.55, r: 0.018 }]);
+  type Ball = { x: number; y: number; vx: number; vy: number; r: number; spin: number };
+  const ballsRef = useRef<Ball[]>([{ x: 0.5, y: 0.72, vx: 0.25, vy: -0.55, r: 0.018, spin: 0 }]);
 
   const bricksRef = useRef<Brick[]>([]);
   const scoreRef = useRef(0);
@@ -85,6 +85,13 @@ export function ArcBreaker() {
   const stageClearMsRef = useRef(0);
   const laserTickMsRef = useRef(0);
   const powerSpawnMsRef = useRef(0);
+
+  // expressive spin + charge system
+  const paddleVelRef = useRef(0);
+  const chargeRef = useRef(0); // 0..1
+  const lastPaddleXRef = useRef(0.5);
+  const lastPaddleMoveMsRef = useRef(0);
+  const slowmoMsRef = useRef(0);
 
   // boss scaffolding (end-of-run)
   const bossRef = useRef<{
@@ -124,7 +131,7 @@ export function ArcBreaker() {
 
   function reset() {
     paddleRef.current = { x: 0.5, w: 0.22 };
-    ballsRef.current = [{ x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018 }];
+    ballsRef.current = [{ x: 0.5, y: 0.72, vx: 0.26, vy: -0.58, r: 0.018, spin: 0 }];
     scoreRef.current = 0;
 
     particlesRef.current = [];
@@ -162,7 +169,7 @@ export function ArcBreaker() {
   function startBoss() {
     // Warden Prism (first end-of-run boss): break anchors → expose core windows → finish.
     paddleRef.current = { x: 0.5, w: 0.22 };
-    ballsRef.current = [{ x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018 }];
+    ballsRef.current = [{ x: 0.5, y: 0.78, vx: 0.22, vy: -0.62, r: 0.018, spin: 0 }];
     scoreRef.current = 0;
 
     particlesRef.current = [];
@@ -262,8 +269,12 @@ export function ArcBreaker() {
     let last = performance.now();
 
     const step = (now: number) => {
-      const dt = Math.min(0.033, (now - last) / 1000);
+      const dtMsRaw = now - last;
+      // slowmo is a multiplier on dt (short bursts only)
+      const slowmo = slowmoMsRef.current > 0 ? 0.35 : 1;
+      const dt = Math.min(0.033, dtMsRaw / 1000) * slowmo;
       last = now;
+      slowmoMsRef.current = Math.max(0, slowmoMsRef.current - dtMsRaw);
 
       // keep audio alive (iOS sometimes suspends between phases)
       if (audioRef.current && audioReadyRef.current && audioRef.current.ctx.state !== "running") {
@@ -284,6 +295,26 @@ export function ArcBreaker() {
         const desiredV = clamp(dx * accel, -maxSpeed, maxSpeed);
         p.x += desiredV * dt;
         p.x = clamp(p.x, 0, 1);
+      }
+
+      // paddle velocity + charge (expressive)
+      {
+        const px = paddleRef.current.x;
+        const v = (px - lastPaddleXRef.current) / Math.max(0.00001, dt);
+        paddleVelRef.current = clamp(v, -4.0, 4.0);
+        if (Math.abs(px - lastPaddleXRef.current) > 0.0008) {
+          lastPaddleMoveMsRef.current = 0;
+        } else {
+          lastPaddleMoveMsRef.current += dt * 1000;
+        }
+        lastPaddleXRef.current = px;
+
+        // charge builds if you hold steady in stage/boss
+        if (modeRef.current !== "win" && lastPaddleMoveMsRef.current > 120) {
+          chargeRef.current = clamp(chargeRef.current + dt * 0.45, 0, 1);
+        } else {
+          chargeRef.current = clamp(chargeRef.current - dt * 0.65, 0, 1);
+        }
       }
 
       // timers + effects
@@ -378,8 +409,13 @@ export function ArcBreaker() {
       }
 
       // sim
-            const balls = ballsRef.current;
+      const balls = ballsRef.current;
       for (const b of balls) {
+        // magnus-ish curve from spin (expressive)
+        const curve = b.spin * 0.22;
+        b.vx = clamp(b.vx + curve * dt, -1.2, 1.2);
+        b.spin *= Math.pow(0.995, dt * 60);
+
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         trailRef.current.push({ x: b.x, y: b.y, life: 160 });
@@ -412,9 +448,25 @@ export function ArcBreaker() {
           b.y = py0 - b.r;
           const t = (b.x - p.x) / (p.w / 2);
           const english = clamp(t, -1, 1);
-          const speed = Math.max(0.35, Math.hypot(b.vx, b.vy));
+
+          // charge: if you held still, next hit is stronger (and juicier)
+          const charge = chargeRef.current;
+          const chargeBoost = 1 + charge * 0.55;
+          const charged = charge > 0.65;
+          if (charged) {
+            slowmoMsRef.current = Math.max(slowmoMsRef.current, 90);
+            screenShakeRef.current = Math.max(screenShakeRef.current, 0.9);
+            sfx("power");
+          }
+          chargeRef.current = 0;
+
+          // expressive spin: combine paddle velocity + contact offset
+          const pv = paddleVelRef.current;
+          b.spin = clamp(b.spin * 0.6 + pv * 0.85 + english * 1.25, -3.0, 3.0);
+
+          const speed = Math.max(0.35, Math.hypot(b.vx, b.vy)) * chargeBoost;
           b.vy = -Math.abs(b.vy);
-          b.vx = clamp(b.vx + english * 0.35, -0.85, 0.85);
+          b.vx = clamp(b.vx + english * 0.45, -0.95, 0.95);
           const ns = Math.hypot(b.vx, b.vy);
           b.vx = (b.vx / ns) * speed;
           b.vy = (b.vy / ns) * speed;
