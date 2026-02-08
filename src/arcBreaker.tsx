@@ -776,7 +776,7 @@ export function ArcBreaker() {
               if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
               const cx = part.x + part.w * 0.5;
               const cy = part.y + part.h * 0.5;
-              const rr = Math.max(part.w, part.h) * 0.72;
+              const rr = 0.12; // match render scale
               const dx = b.x - cx;
               const dy = b.y - cy;
               const d = Math.hypot(dx, dy);
@@ -798,7 +798,7 @@ export function ArcBreaker() {
             if (boss.phase >= 2 && boss.bossShieldHp > 0) {
               const cx = 0.5;
               const cy = 0.24;
-              const rr = 0.26;
+              const rr = 0.30;
               const dx = b.x - cx;
               const dy = b.y - cy;
               const d = Math.hypot(dx, dy);
@@ -823,7 +823,7 @@ export function ArcBreaker() {
               if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
               const cx = part.x + part.w * 0.5;
               const cy = part.y + part.h * 0.5;
-              const rr = Math.max(part.w, part.h) * 0.72;
+              const rr = 0.12; // match render scale
               const d = Math.hypot(m.x - cx, m.y - cy);
               if (d < rr) {
                 part.shieldHp = Math.max(0, part.shieldHp - 1);
@@ -991,7 +991,8 @@ export function ArcBreaker() {
             for (const part of boss.parts) {
               if (part.hp <= 0) continue;
               if (part.kind === "core") {
-                // core can only be hit after main boss shield is broken
+                // core can only be hit after anchors are down AND main boss shield is broken
+                if (boss.phase < 2) continue;
                 if (boss.bossShieldHp > 0) continue;
               }
 
