@@ -48,7 +48,38 @@ function clamp(n: number, a: number, b: number) {
 }
 
 export function ArcBreaker() {
+  // sprite assets (loaded lazily)
+  const spritesRef = useRef<{
+    loaded: boolean;
+    core?: HTMLImageElement;
+    anchor?: HTMLImageElement;
+    shieldAnchor?: HTMLImageElement;
+    shieldBoss?: HTMLImageElement;
+    crackLight?: HTMLImageElement;
+    crackHeavy?: HTMLImageElement;
+    tether?: HTMLImageElement;
+  }>({ loaded: false });
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const ensureSprites = () => {
+    if (spritesRef.current.loaded) return;
+    const mk = (src: string) => {
+      const im = new Image();
+      im.src = src;
+      return im;
+    };
+    spritesRef.current = {
+      loaded: true,
+      core: mk("/arc-breaker/boss/boss_core.png"),
+      anchor: mk("/arc-breaker/boss/anchor.png"),
+      shieldAnchor: mk("/arc-breaker/boss/shield_anchor.png"),
+      shieldBoss: mk("/arc-breaker/boss/shield_boss.png"),
+      crackLight: mk("/arc-breaker/boss/crack_light.png"),
+      crackHeavy: mk("/arc-breaker/boss/crack_heavy.png"),
+      tether: mk("/arc-breaker/boss/tether.png"),
+    };
+  };
   const [size, setSize] = useState({ w: 390, h: 844 });
 
   // touch control
@@ -1133,6 +1164,8 @@ export function ArcBreaker() {
       // boss render (Warden Prism scaffolding)
       const boss2 = bossRef.current;
       if (boss2.active) {
+        const spr = spritesRef.current;
+
         // subtle backdrop
         ctx.fillStyle = boss2.angry ? "rgba(255,90,120,0.055)" : "rgba(80,200,255,0.04)";
         ctx.fillRect(arena.x, arena.y, arena.w, arena.h * 0.42);
@@ -1152,7 +1185,6 @@ export function ArcBreaker() {
             ctx.stroke();
             ctx.setLineDash([]);
           } else {
-            // red hot beam
             ctx.strokeStyle = "rgba(255,90,120,0.65)";
             ctx.lineWidth = 7;
             ctx.beginPath();
@@ -1168,62 +1200,81 @@ export function ArcBreaker() {
           }
         }
 
-        // main glass bubble shield (phase 1/2)
-        if (boss2.bossShieldHp > 0) {
-          const cx = arena.x + 0.5 * arena.w;
-          const cy = arena.y + 0.24 * arena.h;
-          const rr = arena.w * 0.26;
-          const a = clamp(boss2.bossShieldHp / Math.max(1, boss2.bossShieldMax), 0, 1);
-          const gg = ctx.createRadialGradient(cx, cy, rr * 0.1, cx, cy, rr);
-          gg.addColorStop(0, `rgba(160,230,255,${0.06 + 0.10 * a})`);
-          gg.addColorStop(0.55, `rgba(120,200,255,${0.10 + 0.18 * a})`);
-          gg.addColorStop(1, "rgba(120,200,255,0)");
-          ctx.fillStyle = gg;
-          ctx.beginPath();
-          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = `rgba(220,250,255,${0.18 + 0.28 * a})`;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(cx, cy, rr * 0.98, 0, Math.PI * 2);
-          ctx.stroke();
+        // tethers (anchor -> core)
+        if (spr.tether && spr.tether.complete) {
+          const coreC = { x: arena.x + 0.5 * arena.w, y: arena.y + 0.24 * arena.h };
+          for (const part of boss2.parts) {
+            if (part.kind !== "anchor" || part.hp <= 0) continue;
+            const ax = arena.x + (part.x + part.w * 0.5) * arena.w;
+            const ay = arena.y + (part.y + part.h * 0.5) * arena.h;
+            const dx = coreC.x - ax;
+            const dy = coreC.y - ay;
+            const ang = Math.atan2(dy, dx);
+            const len = Math.hypot(dx, dy);
+
+            ctx.save();
+            ctx.translate(ax, ay);
+            ctx.rotate(ang);
+            const h = 34;
+            ctx.globalAlpha = part.shieldHp > 0 ? 0.75 : 0.45;
+            ctx.drawImage(spr.tether, 0, -h / 2, len, h);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+          }
         }
 
+        // main boss bubble shield (sprite)
+        if (boss2.bossShieldHp > 0 && spr.shieldBoss && spr.shieldBoss.complete) {
+          const cx = arena.x + 0.5 * arena.w;
+          const cy = arena.y + 0.24 * arena.h;
+          const rr = arena.w * 0.30;
+          const a = clamp(boss2.bossShieldHp / Math.max(1, boss2.bossShieldMax), 0, 1);
+          ctx.globalAlpha = 0.65 + 0.25 * a;
+          ctx.drawImage(spr.shieldBoss, cx - rr, cy - rr, rr * 2, rr * 2);
+
+          // crack overlay based on remaining HP
+          const crack = a < 0.34 ? spr.crackHeavy : a < 0.67 ? spr.crackLight : undefined;
+          if (crack && crack.complete) {
+            ctx.globalAlpha = 0.35 + 0.35 * (1 - a);
+            ctx.drawImage(crack, cx - rr, cy - rr, rr * 2, rr * 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        // anchors + their bubble shields (sprites)
         for (const part of boss2.parts) {
-          if (part.hp <= 0) continue;
-          const x = arena.x + part.x * arena.w;
-          const y = arena.y + part.y * arena.h;
-          const w = part.w * arena.w;
-          const h = part.h * arena.h;
+          if (part.kind !== "anchor" || part.hp <= 0) continue;
+          const ax = arena.x + (part.x + part.w * 0.5) * arena.w;
+          const ay = arena.y + (part.y + part.h * 0.5) * arena.h;
 
-          const isCore = part.kind === "core";
-
-          // anchors: draw glass bubble shield
-          if (!isCore && part.shieldHp > 0) {
-            const cx = x + w * 0.5;
-            const cy = y + h * 0.5;
-            const rr = Math.max(w, h) * 0.72;
+          if (part.shieldHp > 0 && spr.shieldAnchor && spr.shieldAnchor.complete) {
             const a = clamp(part.shieldHp / Math.max(1, part.shieldMax), 0, 1);
-            const gg = ctx.createRadialGradient(cx, cy, rr * 0.15, cx, cy, rr);
-            gg.addColorStop(0, `rgba(160,230,255,${0.07 + 0.10 * a})`);
-            gg.addColorStop(0.6, `rgba(120,200,255,${0.12 + 0.22 * a})`);
-            gg.addColorStop(1, "rgba(120,200,255,0)");
-            ctx.fillStyle = gg;
-            ctx.beginPath();
-            ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = `rgba(230,255,255,${0.14 + 0.26 * a})`;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(cx, cy, rr * 0.98, 0, Math.PI * 2);
-            ctx.stroke();
+            const rr = arena.w * 0.12;
+            ctx.globalAlpha = 0.55 + 0.30 * a;
+            ctx.drawImage(spr.shieldAnchor, ax - rr, ay - rr, rr * 2, rr * 2);
+            const crack = a < 0.34 ? spr.crackHeavy : a < 0.67 ? spr.crackLight : undefined;
+            if (crack && crack.complete) {
+              ctx.globalAlpha = 0.35 + 0.35 * (1 - a);
+              ctx.drawImage(crack, ax - rr, ay - rr, rr * 2, rr * 2);
+            }
+            ctx.globalAlpha = 1;
           }
 
-          // body/core visuals
-          ctx.fillStyle = isCore ? "rgba(255,90,200,0.55)" : "rgba(255,190,80,0.75)";
-          ctx.fillRect(x, y, w, h);
-          ctx.strokeStyle = "rgba(255,255,255,0.16)";
-          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+          if (spr.anchor && spr.anchor.complete) {
+            const rr = arena.w * 0.09;
+            ctx.drawImage(spr.anchor, ax - rr, ay - rr, rr * 2, rr * 2);
+          }
+        }
+
+        // boss core (sprite)
+        if (spr.core && spr.core.complete) {
+          const cx = arena.x + 0.5 * arena.w;
+          const cy = arena.y + 0.24 * arena.h;
+          const rr = arena.w * 0.16;
+          const exposed = boss2.phase >= 2 && boss2.bossShieldHp <= 0;
+          ctx.globalAlpha = exposed ? 1 : 0.85;
+          ctx.drawImage(spr.core, cx - rr, cy - rr, rr * 2, rr * 2);
+          ctx.globalAlpha = 1;
         }
 
         // boss status text
@@ -1426,6 +1477,8 @@ export function ArcBreaker() {
         touchAction: "none",
       }}
       onPointerDown={(e) => {
+        ensureSprites();
+
         // init audio on first user gesture (iOS requirement)
         if (!audioRef.current) {
           const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
