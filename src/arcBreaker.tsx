@@ -70,6 +70,8 @@ export function ArcBreaker() {
 
   const ensureSprites = () => {
     if (spritesRef.current.loaded) return;
+    const base = (import.meta as any).env?.BASE_URL || "/";
+    const join = (p: string) => (base.endsWith("/") ? base : base + "/") + p.replace(/^\//, "");
     const mk = (src: string) => {
       const im = new Image();
       im.src = src;
@@ -77,19 +79,19 @@ export function ArcBreaker() {
     };
     spritesRef.current = {
       loaded: true,
-      core: mk("/arc-breaker/boss/boss_core.png"),
-      anchor: mk("/arc-breaker/boss/anchor.png"),
-      shieldAnchor: mk("/arc-breaker/boss/shield_anchor.png"),
-      shieldBoss: mk("/arc-breaker/boss/shield_boss.png"),
-      shieldBossAlt: mk("/arc-breaker/boss/shield_boss_alt.png"),
-      crackLight: mk("/arc-breaker/boss/crack_light.png"),
-      crackHeavy: mk("/arc-breaker/boss/crack_heavy.png"),
-      tether: mk("/arc-breaker/boss/tether.png"),
-      gearRing: mk("/arc-breaker/boss/gear_ring.png"),
-      energyNodes: mk("/arc-breaker/boss/energy_nodes.png"),
-      ringImpact: mk("/arc-breaker/boss/ring_impact.png"),
-      burstAnchor: mk("/arc-breaker/boss/burst_anchor.png"),
-      burstShieldBreak: mk("/arc-breaker/boss/burst_shield_break.png"),
+      core: mk(join("arc-breaker/boss/boss_core.png")),
+      anchor: mk(join("arc-breaker/boss/anchor.png")),
+      shieldAnchor: mk(join("arc-breaker/boss/shield_anchor.png")),
+      shieldBoss: mk(join("arc-breaker/boss/shield_boss.png")),
+      shieldBossAlt: mk(join("arc-breaker/boss/shield_boss_alt.png")),
+      crackLight: mk(join("arc-breaker/boss/crack_light.png")),
+      crackHeavy: mk(join("arc-breaker/boss/crack_heavy.png")),
+      tether: mk(join("arc-breaker/boss/tether.png")),
+      gearRing: mk(join("arc-breaker/boss/gear_ring.png")),
+      energyNodes: mk(join("arc-breaker/boss/energy_nodes.png")),
+      ringImpact: mk(join("arc-breaker/boss/ring_impact.png")),
+      burstAnchor: mk(join("arc-breaker/boss/burst_anchor.png")),
+      burstShieldBreak: mk(join("arc-breaker/boss/burst_shield_break.png")),
     };
   };
   const [size, setSize] = useState({ w: 390, h: 844 });
@@ -1134,6 +1136,11 @@ export function ArcBreaker() {
         ctx.fillStyle = audioReadyRef.current ? "rgba(140,255,160,0.55)" : "rgba(255,200,120,0.55)";
         ctx.font = "700 12px system-ui, -apple-system, Segoe UI, Roboto";
         ctx.fillText(audioReadyRef.current ? "SOUND: ON" : "SOUND: TAP TO ENABLE", layout.pad, layout.pad + 62);
+
+        // debug state (temporary)
+        ctx.fillStyle = "rgba(220,240,255,0.35)";
+        ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto";
+        ctx.fillText(`MODE: ${modeRef.current}  BOSS: ${bossRef.current.active ? "ON" : "OFF"}`, layout.pad, layout.pad + 80);
       }
 
       // debug boss button (tap)
@@ -1537,16 +1544,22 @@ export function ArcBreaker() {
         }
 
         // HUD taps (debug actions)
-        const btnW = 110;
-        const btnH = 28;
+        const btnW = 140;
+        const btnH = 36;
         const btnX = size.w - layout.pad - btnW;
-        const btnY = layout.pad + 14;
+        const btnY = layout.pad + 10;
         if (
           e.clientX >= btnX &&
           e.clientX <= btnX + btnW &&
           e.clientY >= btnY &&
           e.clientY <= btnY + btnH
         ) {
+          startBoss();
+          return;
+        }
+
+        // fallback: 2-finger tap anywhere starts boss
+        if ((e as any).isPrimary === false) {
           startBoss();
           return;
         }
