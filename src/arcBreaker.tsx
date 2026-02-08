@@ -705,27 +705,36 @@ export function ArcBreaker() {
         laserTickMsRef.current = 220; // tick rate
         const lx = paddleRef.current.x;
 
-        // limit how much it can delete per tick
-        let budget = 2;
-
-        // bricks
-        for (let i = 0; i < bricksRef.current.length && budget > 0; i++) {
-          const br = bricksRef.current[i];
+        // bricks: raycast-like (hit closest brick first, not all of them)
+        {
           const cols = 9;
           const bxPad = 0.06;
           const top = 0.08;
           const areaW = 1 - bxPad * 2;
           const cellW = areaW / cols;
           const cellH = 0.045;
-          const x0 = bxPad + br.x * cellW;
-          const x1 = bxPad + (br.x + 1) * cellW;
-          const y1 = top + (br.y + 1) * cellH;
-          if (lx >= x0 && lx <= x1 && y1 < 0.92) {
+
+          let bestI = -1;
+          let bestY = -1;
+          for (let i = 0; i < bricksRef.current.length; i++) {
+            const br = bricksRef.current[i];
+            const x0 = bxPad + br.x * cellW;
+            const x1 = bxPad + (br.x + 1) * cellW;
+            const y1 = top + (br.y + 1) * cellH;
+            if (lx >= x0 && lx <= x1 && y1 < 0.92) {
+              // choose the brick closest to the paddle (largest y)
+              if (y1 > bestY) {
+                bestY = y1;
+                bestI = i;
+              }
+            }
+          }
+
+          if (bestI >= 0) {
+            const br = bricksRef.current[bestI];
             br.hp -= 1;
-            budget--;
             if (br.hp <= 0) {
-              bricksRef.current.splice(i, 1);
-              i--;
+              bricksRef.current.splice(bestI, 1);
               scoreRef.current += 15;
             }
           }
@@ -734,30 +743,41 @@ export function ArcBreaker() {
         // boss anchors + boss shield/core
         const boss = bossRef.current;
         if (boss.active) {
-          // anchors: strip shield first (and reflect beam hits as impacts)
+          // Laser should behave like it hits the first thing in line.
+          // Priority: closest anchor at this x, else main shield, else core.
+          let did = false;
+
+          // anchors (pick closest to paddle)
+          let best = null as any;
+          let bestY = -1;
           for (const part of boss.parts) {
             if (part.kind !== "anchor" || part.hp <= 0) continue;
             if (lx >= part.x && lx <= part.x + part.w) {
-              if (part.shieldHp > 0) {
-                part.shieldHp = Math.max(0, part.shieldHp - 1);
-              } else {
-                part.hp -= 1;
+              const y = part.y + part.h;
+              if (y > bestY) {
+                bestY = y;
+                best = part;
               }
-              scoreRef.current += 1;
-              break;
             }
+          }
+          if (best) {
+            if (best.shieldHp > 0) best.shieldHp = Math.max(0, best.shieldHp - 1);
+            else best.hp -= 1;
+            scoreRef.current += 1;
+            did = true;
           }
 
           const anchorsAlive = boss.parts.some((p) => p.kind === "anchor" && p.hp > 0);
 
-          // main boss shield (after anchors are down)
-          if (!anchorsAlive && boss.bossShieldHp > 0) {
+          // main shield
+          if (!did && !anchorsAlive && boss.bossShieldHp > 0) {
             boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
             scoreRef.current += 1;
+            did = true;
           }
 
-          // core only after shield is down
-          if (!anchorsAlive && boss.bossShieldHp <= 0) {
+          // core
+          if (!did && !anchorsAlive && boss.bossShieldHp <= 0) {
             for (const part of boss.parts) {
               if (part.kind !== "core" || part.hp <= 0) continue;
               if (lx >= part.x && lx <= part.x + part.w) {
@@ -770,8 +790,8 @@ export function ArcBreaker() {
           }
 
           // physical shield collision (ball bounces off the bubble)
-          //  - anchor bubbles
           for (const b of ballsRef.current) {
+            // anchor bubbles
             for (const part of boss.parts) {
               if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
               const cx = part.x + part.w * 0.5;
@@ -781,12 +801,10 @@ export function ArcBreaker() {
               const dy = b.y - cy;
               const d = Math.hypot(dx, dy);
               if (d > 0 && d < rr + b.r) {
-                // push out
                 const nx = dx / d;
                 const ny = dy / d;
                 b.x = cx + nx * (rr + b.r);
                 b.y = cy + ny * (rr + b.r);
-                // reflect
                 const dot = b.vx * nx + b.vy * ny;
                 b.vx -= 2 * dot * nx;
                 b.vy -= 2 * dot * ny;
@@ -815,7 +833,7 @@ export function ArcBreaker() {
             }
           }
 
-          // missiles should also "hit" shields (pop early)
+          // missiles should also hit shields
           for (let mi = 0; mi < missilesRef.current.length; mi++) {
             const m = missilesRef.current[mi];
             let hitShield = false;
@@ -823,7 +841,7 @@ export function ArcBreaker() {
               if (part.kind !== "anchor" || part.hp <= 0 || part.shieldHp <= 0) continue;
               const cx = part.x + part.w * 0.5;
               const cy = part.y + part.h * 0.5;
-              const rr = 0.12; // match render scale
+              const rr = 0.12;
               const d = Math.hypot(m.x - cx, m.y - cy);
               if (d < rr) {
                 part.shieldHp = Math.max(0, part.shieldHp - 1);
@@ -833,7 +851,7 @@ export function ArcBreaker() {
             }
             if (!hitShield && boss.phase >= 2 && boss.bossShieldHp > 0) {
               const d = Math.hypot(m.x - 0.5, m.y - 0.24);
-              if (d < 0.26) {
+              if (d < 0.30) {
                 boss.bossShieldHp = Math.max(0, boss.bossShieldHp - 1);
                 hitShield = true;
               }
