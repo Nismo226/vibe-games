@@ -318,8 +318,14 @@ export function Dust() {
         characterRoot.parent = playerRoot;
         // Meshy exports tend to be huge in world units. Scale down.
         characterRoot.scaling.setAll(0.18);
-        // Drop the model so feet sit near ground (tweakable)
-        characterRoot.position = new Vector3(0, -1.18, 0);
+
+        // Auto place the model so its feet touch the ground (after scaling)
+        // We compute bounds in local space by temporarily parenting at origin.
+        characterRoot.position = new Vector3(0, 0, 0);
+        const bounds = characterRoot.getHierarchyBoundingVectors(true);
+        const minY = bounds.min.y;
+        characterRoot.position = new Vector3(0, -minY, 0);
+
         placeholder.setEnabled(false);
 
         const w = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "walk.glb", scene);
@@ -327,8 +333,11 @@ export function Dust() {
         const r = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "run.glb", scene);
         runAG = r.animationGroups?.[0] ?? null;
 
-        walkAG?.start(true, 1.0);
+        // Start in idle (no anim). We only play walk/run when there's real movement intent.
+        walkAG?.stop();
         runAG?.stop();
+        walkAG?.goToFrame(0);
+        runAG?.goToFrame(0);
       } catch {
         // keep placeholder
       }
@@ -461,13 +470,16 @@ export function Dust() {
       {
         const intent = Math.hypot(input.moveX, input.moveY);
         const sp2 = Math.hypot(vel.x, vel.z);
-        const running = intent > 0.7 || sp2 > 6.8;
-        const moving = intent > 0.08;
+        const running = intent > 0.72 || sp2 > 6.8;
+        const moving = intent > 0.12;
 
         if (walkAG && runAG) {
           if (!moving) {
             if (walkAG.isStarted) walkAG.stop();
             if (runAG.isStarted) runAG.stop();
+            // hard reset to first frame so it doesn't freeze mid-stride
+            walkAG.goToFrame(0);
+            runAG.goToFrame(0);
           } else if (running) {
             if (walkAG.isStarted) walkAG.stop();
             if (!runAG.isStarted) runAG.start(true, 1.0);
@@ -522,9 +534,10 @@ export function Dust() {
           letterSpacing: 0.2,
           userSelect: "none",
           pointerEvents: "none",
+          whiteSpace: "pre-line",
         }}
       >
-        ELEMENT WEAVER (prototype) — move: WASD / left stick • camera: mouse / right stick • sculpt: hold (mouse) or touch • 2-finger touch lowers
+        {"ELEMENT WEAVER (prototype)\nmove: WASD / left stick • camera: mouse / right stick\nsculpt: hold (mouse) or touch • 2-finger touch lowers"}
       </div>
     </div>
   );
