@@ -11,6 +11,7 @@ import {
   FollowCamera,
   Quaternion,
   CubeTexture,
+  VertexBuffer,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -129,23 +130,61 @@ export function Dust() {
       skyboxSize: 250,
     });
 
-    // Ground
-    const ground = MeshBuilder.CreateGround(
-      "ground",
-      { width: 120, height: 120, subdivisions: 2 },
-      scene,
-    );
+    // Ground (heightmap grid)
+    const TERR_W = 120;
+    const TERR_H = 120;
+    const SUB = 128;
+    const ground = MeshBuilder.CreateGround("ground", { width: TERR_W, height: TERR_H, subdivisions: SUB }, scene);
     const gmat = new StandardMaterial("gmat", scene);
     gmat.diffuseColor = new Color3(0.12, 0.14, 0.16);
     gmat.specularColor = new Color3(0.06, 0.06, 0.07);
     ground.material = gmat;
 
+    // store heights aligned to ground vertices
+    const heights = new Float32Array((SUB + 1) * (SUB + 1));
+
+    const applyHeightsToMesh = () => {
+      const pos = ground.getVerticesData(VertexBuffer.PositionKind);
+      if (!pos) return;
+      for (let i = 0; i < heights.length; i++) {
+        // each vertex has xyz
+        pos[i * 3 + 1] = heights[i];
+      }
+      ground.updateVerticesData(VertexBuffer.PositionKind, pos);
+      ground.refreshBoundingInfo();
+      ground.computeWorldMatrix(true);
+    };
+
+    const brushAt = (worldX: number, worldZ: number, delta: number) => {
+      // map world xz to 0..SUB grid
+      const gx = ((worldX / TERR_W) + 0.5) * SUB;
+      const gz = ((worldZ / TERR_H) + 0.5) * SUB;
+      const r = 5.5; // in grid units
+      const r2 = r * r;
+
+      const x0 = Math.max(0, Math.floor(gx - r - 1));
+      const x1 = Math.min(SUB, Math.ceil(gx + r + 1));
+      const z0 = Math.max(0, Math.floor(gz - r - 1));
+      const z1 = Math.min(SUB, Math.ceil(gz + r + 1));
+
+      for (let z = z0; z <= z1; z++) {
+        for (let x = x0; x <= x1; x++) {
+          const dx = x - gx;
+          const dz = z - gz;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > r2) continue;
+          const t = 1 - d2 / r2;
+          const k = t * t * (3 - 2 * t); // smoothstep-ish
+          const idx = z * (SUB + 1) + x;
+          heights[idx] = clamp(heights[idx] + delta * k, -8, 18);
+        }
+      }
+
+      applyHeightsToMesh();
+    };
+
     // Player avatar (placeholder)
-    const player = MeshBuilder.CreateCapsule(
-      "player",
-      { radius: 0.45, height: 1.75, tessellation: 12 },
-      scene,
-    );
+    const player = MeshBuilder.CreateCapsule("player", { radius: 0.45, height: 1.75, tessellation: 12 }, scene);
     player.position = new Vector3(0, 1.2, 0);
     const pmat = new StandardMaterial("pmat", scene);
     pmat.diffuseColor = new Color3(0.8, 0.88, 0.95);
@@ -168,6 +207,21 @@ export function Dust() {
     const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+
+    // Pointer-based terrain sculpting (mouse)
+    let sculpt = false;
+    let sculptSign = 1;
+    const onPointerDown = (e: PointerEvent) => {
+      sculpt = true;
+      sculptSign = e.button === 2 ? -1 : 1;
+    };
+    const onPointerUp = () => {
+      sculpt = false;
+    };
+    const onContext = (e: Event) => e.preventDefault();
+    canvas.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("contextmenu", onContext);
 
     // Main loop (character controller)
     let yaw = 0;
@@ -197,8 +251,25 @@ export function Dust() {
       player.position.x += vel.x * dt;
       player.position.z += vel.z * dt;
 
-      // ground clamp (flat for now)
-      player.position.y = 1.2;
+      // ground clamp (simple sample from height grid)
+      {
+        const gx = ((player.position.x / TERR_W) + 0.5) * SUB;
+        const gz = ((player.position.z / TERR_H) + 0.5) * SUB;
+        const x0 = Math.max(0, Math.min(SUB, Math.floor(gx)));
+        const z0 = Math.max(0, Math.min(SUB, Math.floor(gz)));
+        const x1 = Math.max(0, Math.min(SUB, x0 + 1));
+        const z1 = Math.max(0, Math.min(SUB, z0 + 1));
+        const tx = clamp(gx - x0, 0, 1);
+        const tz = clamp(gz - z0, 0, 1);
+        const h00 = heights[z0 * (SUB + 1) + x0];
+        const h10 = heights[z0 * (SUB + 1) + x1];
+        const h01 = heights[z1 * (SUB + 1) + x0];
+        const h11 = heights[z1 * (SUB + 1) + x1];
+        const h0 = h00 + (h10 - h00) * tx;
+        const h1 = h01 + (h11 - h01) * tx;
+        const hh = h0 + (h1 - h0) * tz;
+        player.position.y = hh + 1.2;
+      }
 
       // face movement direction
       const mv = new Vector3(vel.x, 0, vel.z);
@@ -206,6 +277,15 @@ export function Dust() {
       if (mvl > 0.2) {
         yaw = Math.atan2(mv.x, mv.z);
         player.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
+      }
+
+      // terrain sculpt while holding mouse (LMB raise, RMB lower)
+      if (sculpt) {
+        const hit = scene.pick(scene.pointerX, scene.pointerY, (m) => m === ground);
+        if (hit?.hit && hit.pickedPoint) {
+          const rate = 12; // units/sec
+          brushAt(hit.pickedPoint.x, hit.pickedPoint.z, sculptSign * rate * dt);
+        }
       }
 
       scene.render();
@@ -218,6 +298,9 @@ export function Dust() {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("contextmenu", onContext);
       scene.dispose();
       engine.dispose();
     };
@@ -238,7 +321,7 @@ export function Dust() {
           pointerEvents: "none",
         }}
       >
-        ELEMENT WEAVER (prototype) — WASD + mouse / gamepad sticks • LT sprint
+        ELEMENT WEAVER (prototype) — WASD + mouse / gamepad sticks • LT sprint • LMB raise terrain • RMB lower
       </div>
     </div>
   );
