@@ -12,6 +12,7 @@ import {
   Quaternion,
   CubeTexture,
   VertexBuffer,
+  Texture,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -136,8 +137,15 @@ export function Dust() {
     const SUB = 128;
     const ground = MeshBuilder.CreateGround("ground", { width: TERR_W, height: TERR_H, subdivisions: SUB }, scene);
     const gmat = new StandardMaterial("gmat", scene);
-    gmat.diffuseColor = new Color3(0.12, 0.14, 0.16);
-    gmat.specularColor = new Color3(0.06, 0.06, 0.07);
+    // Lightweight "grass" look (procedural-ish) without external downloads.
+    // Use a tiled noise texture for detail + vertex colors for slope/height blending.
+    const grassTex = new Texture("https://assets.babylonjs.com/textures/grass.png", scene, true, false);
+    grassTex.uScale = 30;
+    grassTex.vScale = 30;
+    gmat.diffuseTexture = grassTex;
+    gmat.specularColor = new Color3(0.03, 0.03, 0.03);
+    gmat.specularPower = 64;
+    // StandardMaterial uses vertex colors automatically if present.
     ground.material = gmat;
 
     // store heights aligned to ground vertices
@@ -147,10 +155,44 @@ export function Dust() {
       const pos = ground.getVerticesData(VertexBuffer.PositionKind);
       if (!pos) return;
       for (let i = 0; i < heights.length; i++) {
-        // each vertex has xyz
         pos[i * 3 + 1] = heights[i];
       }
+
+      // Vertex colors: grass on flats, rock on steep slopes, sand near sea-level.
+      const colors = new Float32Array(heights.length * 4);
+      const hAt = (x: number, z: number) => heights[z * (SUB + 1) + x];
+      const sea = 0.0;
+      for (let z = 0; z <= SUB; z++) {
+        for (let x = 0; x <= SUB; x++) {
+          const i = z * (SUB + 1) + x;
+          const h = heights[i];
+          const hx0 = hAt(Math.max(0, x - 1), z);
+          const hx1 = hAt(Math.min(SUB, x + 1), z);
+          const hz0 = hAt(x, Math.max(0, z - 1));
+          const hz1 = hAt(x, Math.min(SUB, z + 1));
+          const dx = (hx1 - hx0) * 0.5;
+          const dz = (hz1 - hz0) * 0.5;
+          const slope = Math.min(1, Math.hypot(dx, dz) * 0.35);
+
+          // sand factor near sea level
+          const sand = clamp(1 - Math.abs(h - sea) / 1.8, 0, 1);
+          const rock = clamp((slope - 0.35) / 0.45, 0, 1);
+          const grass = clamp(1 - rock, 0, 1) * (1 - sand * 0.75);
+
+          // colors (linear-ish)
+          const r = 0.10 * grass + 0.40 * rock + 0.18 * sand;
+          const g = 0.55 * grass + 0.40 * rock + 0.42 * sand;
+          const b = 0.12 * grass + 0.42 * rock + 0.20 * sand;
+
+          colors[i * 4 + 0] = r;
+          colors[i * 4 + 1] = g;
+          colors[i * 4 + 2] = b;
+          colors[i * 4 + 3] = 1;
+        }
+      }
+
       ground.updateVerticesData(VertexBuffer.PositionKind, pos);
+      ground.setVerticesData(VertexBuffer.ColorKind, colors, true);
       ground.refreshBoundingInfo();
       ground.computeWorldMatrix(true);
     };
@@ -176,12 +218,58 @@ export function Dust() {
           const t = 1 - d2 / r2;
           const k = t * t * (3 - 2 * t); // smoothstep-ish
           const idx = z * (SUB + 1) + x;
-          heights[idx] = clamp(heights[idx] + delta * k, -8, 18);
+          heights[idx] = clamp(heights[idx] + delta * k, -8, 22);
         }
       }
 
       applyHeightsToMesh();
     };
+
+    // initial island (radial falloff + noise + volcano peak)
+    {
+      const hash = (x: number, y: number) => {
+        let n = x * 374761393 + y * 668265263;
+        n = (n ^ (n >> 13)) * 1274126177;
+        return (n ^ (n >> 16)) >>> 0;
+      };
+      const noise2 = (x: number, y: number) => (hash(x, y) % 10000) / 10000;
+      for (let z = 0; z <= SUB; z++) {
+        for (let x = 0; x <= SUB; x++) {
+          const u = x / SUB;
+          const v = z / SUB;
+          const dx = u - 0.5;
+          const dz = v - 0.5;
+          const r = Math.hypot(dx, dz);
+          const fall = clamp(1 - Math.pow(r / 0.52, 2.2), 0, 1);
+
+          // fbm-ish
+          let n = 0;
+          let amp = 1;
+          let freq = 1;
+          for (let o = 0; o < 5; o++) {
+            const sx = Math.floor((u * 64) * freq);
+            const sz = Math.floor((v * 64) * freq);
+            n += (noise2(sx + o * 17, sz + o * 31) * 2 - 1) * amp;
+            amp *= 0.55;
+            freq *= 2;
+          }
+
+          // base island height
+          let h = fall * (6.5 + 4.5 * n);
+
+          // volcano-ish mountain off-center
+          const vx = u - 0.63;
+          const vz = v - 0.38;
+          const vr = Math.hypot(vx, vz);
+          const peak = clamp(1 - vr / 0.18, 0, 1);
+          h += Math.pow(peak, 2.2) * 14;
+
+          heights[z * (SUB + 1) + x] = h - 0.8; // sea level ~0
+        }
+      }
+      applyHeightsToMesh();
+    }
+
 
     // Player avatar (placeholder)
     const player = MeshBuilder.CreateCapsule("player", { radius: 0.45, height: 1.75, tessellation: 12 }, scene);
@@ -208,20 +296,53 @@ export function Dust() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
-    // Pointer-based terrain sculpting (mouse)
+    // Pointer-based terrain sculpting
+    // Desktop: LMB raise, RMB lower.
+    // Mobile: 1 finger = raise, 2 fingers = lower.
     let sculpt = false;
     let sculptSign = 1;
+
+    const sculptAtPointer = (dt: number) => {
+      const hit = scene.pick(scene.pointerX, scene.pointerY, (m) => m === ground);
+      if (hit?.hit && hit.pickedPoint) {
+        const rate = 12; // units/sec
+        brushAt(hit.pickedPoint.x, hit.pickedPoint.z, sculptSign * rate * dt);
+      }
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       sculpt = true;
-      sculptSign = e.button === 2 ? -1 : 1;
+      // If touch, button is usually 0; use multi-touch heuristic.
+      const isTouch = e.pointerType === "touch";
+      const touches = (e as any).touches as TouchList | undefined;
+      sculptSign = isTouch ? ((touches && touches.length >= 2) ? -1 : 1) : e.button === 2 ? -1 : 1;
+      sculptAtPointer(1 / 60);
+    };
+    const onPointerMove = () => {
+      // keep Babylon pointerX/Y updated; sculpt in render loop
     };
     const onPointerUp = () => {
       sculpt = false;
     };
     const onContext = (e: Event) => e.preventDefault();
+
     canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("contextmenu", onContext);
+
+    // Touch fallback (some browsers don’t deliver pointerType=touch reliably)
+    const onTouchStart = (e: TouchEvent) => {
+      sculpt = true;
+      sculptSign = e.touches.length >= 2 ? -1 : 1;
+      sculptAtPointer(1 / 60);
+    };
+    const onTouchEnd = () => {
+      sculpt = false;
+    };
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
+    canvas.addEventListener("touchcancel", onTouchEnd);
 
     // Main loop (character controller)
     let yaw = 0;
@@ -279,13 +400,9 @@ export function Dust() {
         player.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
       }
 
-      // terrain sculpt while holding mouse (LMB raise, RMB lower)
+      // terrain sculpt while holding input
       if (sculpt) {
-        const hit = scene.pick(scene.pointerX, scene.pointerY, (m) => m === ground);
-        if (hit?.hit && hit.pickedPoint) {
-          const rate = 12; // units/sec
-          brushAt(hit.pickedPoint.x, hit.pickedPoint.z, sculptSign * rate * dt);
-        }
+        sculptAtPointer(dt);
       }
 
       scene.render();
@@ -299,8 +416,12 @@ export function Dust() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("contextmenu", onContext);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("touchcancel", onTouchEnd);
       scene.dispose();
       engine.dispose();
     };
@@ -321,7 +442,7 @@ export function Dust() {
           pointerEvents: "none",
         }}
       >
-        ELEMENT WEAVER (prototype) — WASD + mouse / gamepad sticks • LT sprint • LMB raise terrain • RMB lower
+        ELEMENT WEAVER (prototype) — move: WASD / left stick • camera: mouse / right stick • sculpt: hold (mouse) or touch • 2-finger touch lowers
       </div>
     </div>
   );
