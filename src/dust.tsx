@@ -447,6 +447,15 @@ export function Dust() {
         // Now attach to the player root (playerRoot.y is feet height)
         characterRoot.parent = playerRoot;
 
+        // Re-align feet to ground in world space (robust against weird export pivots)
+        try {
+          characterRoot.computeWorldMatrix(true);
+          const b2 = characterRoot.getHierarchyBoundingVectors(true);
+          const feetY = playerRoot.getAbsolutePosition().y;
+          const dy = feetY - b2.min.y;
+          characterRoot.position.y += dy;
+        } catch {}
+
         placeholder.setEnabled(false);
 
         // Load animations from separate GLBs and retarget to the character skeleton.
