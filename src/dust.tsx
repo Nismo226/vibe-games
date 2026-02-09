@@ -10,9 +10,9 @@ import {
   StandardMaterial,
   FollowCamera,
   Quaternion,
-  CubeTexture,
   VertexBuffer,
   Texture,
+  DynamicTexture,
   SceneLoader,
   TransformNode,
   AnimationGroup,
@@ -172,20 +172,46 @@ export function Dust() {
     const sun = new DirectionalLight("sun", new Vector3(-0.6, -1, -0.25), scene);
     sun.intensity = 2.25;
 
-    // Environment texture (free, hosted by Babylon)
-    // Looks way better than a flat light.
-    scene.environmentTexture = CubeTexture.CreateFromPrefilteredData(
-      "https://assets.babylonjs.com/environments/environmentSpecular.env",
-      scene,
-    );
-    scene.createDefaultEnvironment({
-      createSkybox: true,
-      skyboxSize: 1200,
-    });
-    // Light haze helps sell depth
+    // Procedural sky (no external downloads; iOS/Safari caching + CORS can be flaky)
     scene.fogMode = Scene.FOGMODE_EXP2;
-    scene.fogDensity = 0.0022;
+    scene.fogDensity = 0.0020;
     scene.fogColor = new Color3(0.55, 0.72, 0.92);
+    scene.clearColor = scene.fogColor.toColor4(1);
+
+    const skyTex = new DynamicTexture("skyTex", { width: 512, height: 256 }, scene, false);
+    {
+      const ctx = skyTex.getContext();
+      const w = skyTex.getSize().width;
+      const h = skyTex.getSize().height;
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0.0, "#77b7ff");
+      g.addColorStop(0.55, "#8fd0ff");
+      g.addColorStop(1.0, "#e9f6ff");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      // simple sun bloom
+      const sx = Math.floor(w * 0.72);
+      const sy = Math.floor(h * 0.32);
+      const r = Math.floor(h * 0.22);
+      const rg = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+      rg.addColorStop(0.0, "rgba(255,255,240,0.95)");
+      rg.addColorStop(0.25, "rgba(255,250,210,0.55)");
+      rg.addColorStop(1.0, "rgba(255,255,255,0.0)");
+      ctx.fillStyle = rg;
+      ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+      skyTex.update(false);
+    }
+
+    const sky = MeshBuilder.CreateSphere("sky", { diameter: 4000, segments: 16 }, scene);
+    sky.isPickable = false;
+    const sm = new StandardMaterial("skyMat", scene);
+    sm.backFaceCulling = false;
+    sm.diffuseTexture = skyTex;
+    sm.diffuseTexture.hasAlpha = false;
+    sm.emissiveColor = new Color3(1, 1, 1);
+    sm.specularColor = new Color3(0, 0, 0);
+    sm.disableLighting = true;
+    sky.material = sm;
 
     // Ground (heightmap grid)
     const TERR_W = 420;
@@ -193,14 +219,28 @@ export function Dust() {
     const SUB = 128;
     const ground = MeshBuilder.CreateGround("ground", { width: TERR_W, height: TERR_H, subdivisions: SUB }, scene);
     const gmat = new StandardMaterial("gmat", scene);
-    // Lightweight "grass" look (procedural-ish) without external downloads.
-    // Use a tiled noise texture for detail + vertex colors for slope/height blending.
-    const grassTex = new Texture("https://assets.babylonjs.com/textures/grass.png", scene, true, false);
-    grassTex.uScale = 22;
-    grassTex.vScale = 22;
-    // make it sharper at grazing angles
-    grassTex.anisotropicFilteringLevel = 12;
-    grassTex.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+    // Lightweight "grass" texture (procedural, no network)
+    const grassTex = new DynamicTexture("grassTex", { width: 256, height: 256 }, scene, false);
+    {
+      const ctx = grassTex.getContext();
+      const w = grassTex.getSize().width;
+      const h = grassTex.getSize().height;
+      ctx.fillStyle = "#2f6b2d";
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 9000; i++) {
+        const x = (Math.random() * w) | 0;
+        const y = (Math.random() * h) | 0;
+        const g = 90 + ((Math.random() * 90) | 0);
+        ctx.fillStyle = `rgba(20,${g},20,0.35)`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+      grassTex.update(false);
+    }
+    grassTex.wrapU = Texture.WRAP_ADDRESSMODE;
+    grassTex.wrapV = Texture.WRAP_ADDRESSMODE;
+    grassTex.uScale = 18;
+    grassTex.vScale = 18;
+    (grassTex as any).anisotropicFilteringLevel = 8;
     gmat.diffuseTexture = grassTex;
     gmat.specularColor = new Color3(0.03, 0.03, 0.03);
     gmat.specularPower = 64;
