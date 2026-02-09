@@ -18,7 +18,6 @@ import {
   AnimationGroup,
   Skeleton,
   Bone,
-  VirtualJoystick,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -53,9 +52,15 @@ function snapZero(v: number, eps: number) {
   return Math.abs(v) < eps ? 0 : v;
 }
 
-let joyMove: VirtualJoystick | null = null;
-let joyLook: VirtualJoystick | null = null;
 let joyState = { mx: 0, my: 0, lx: 0, ly: 0 };
+let touchMoveId: number | null = null;
+let touchLookId: number | null = null;
+let touchMoveStart = { x: 0, y: 0 };
+let touchLookStart = { x: 0, y: 0 };
+let touchMoveNow = { x: 0, y: 0 };
+let touchLookNow = { x: 0, y: 0 };
+let pinchStartDist = 0;
+let pinchStartRadius = 0;
 
 function pollInput(keys: Set<string>): InputState {
   // keyboard
@@ -478,22 +483,99 @@ export function Dust() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
-    // Mobile controls: virtual joysticks (move + camera)
+    // Mobile controls: bottom-half virtual sticks + top-half pinch zoom
+    // - bottom-left drag = move
+    // - bottom-right drag = camera look
+    // - top-half 2-finger pinch = zoom camera radius
+
     const isTouchDevice = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+    const bottomHalfY = () => window.innerHeight * 0.5;
+
+    const setTouch = (id: number | null, start: any, now: any, x: number, y: number) => {
+      if (id == null) {
+        start.x = x;
+        start.y = y;
+      }
+      now.x = x;
+      now.y = y;
+    };
+
+    const onTouchStartGame = (e: TouchEvent) => {
+      if (!isTouchDevice) return;
+
+      // Top-half pinch zoom
+      if (e.touches.length >= 2) {
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        if (t0.clientY < bottomHalfY() && t1.clientY < bottomHalfY()) {
+          pinchStartDist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+          pinchStartRadius = cam.radius;
+        }
+      }
+
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.clientY < bottomHalfY()) continue;
+
+        if (t.clientX < window.innerWidth * 0.5 && touchMoveId == null) {
+          touchMoveId = t.identifier;
+          setTouch(touchMoveId, touchMoveStart, touchMoveNow, t.clientX, t.clientY);
+        } else if (t.clientX >= window.innerWidth * 0.5 && touchLookId == null) {
+          touchLookId = t.identifier;
+          setTouch(touchLookId, touchLookStart, touchLookNow, t.clientX, t.clientY);
+        }
+      }
+    };
+
+    const onTouchMoveGame = (e: TouchEvent) => {
+      if (!isTouchDevice) return;
+
+      // pinch zoom update (top half only)
+      if (e.touches.length >= 2) {
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        if (t0.clientY < bottomHalfY() && t1.clientY < bottomHalfY()) {
+          const d = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+          if (pinchStartDist > 0) {
+            const k = d / pinchStartDist;
+            cam.radius = clamp(pinchStartRadius / Math.max(0.25, k), 6, 26);
+          }
+        }
+      }
+
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i];
+        if (t.identifier === touchMoveId) setTouch(touchMoveId, touchMoveStart, touchMoveNow, t.clientX, t.clientY);
+        if (t.identifier === touchLookId) setTouch(touchLookId, touchLookStart, touchLookNow, t.clientX, t.clientY);
+      }
+    };
+
+    const onTouchEndGame = (e: TouchEvent) => {
+      if (!isTouchDevice) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === touchMoveId) {
+          touchMoveId = null;
+          joyState.mx = 0;
+          joyState.my = 0;
+        }
+        if (t.identifier === touchLookId) {
+          touchLookId = null;
+          joyState.lx = 0;
+          joyState.ly = 0;
+        }
+      }
+
+      if (e.touches.length < 2) {
+        pinchStartDist = 0;
+      }
+    };
+
     if (isTouchDevice) {
-      joyMove = new VirtualJoystick(true);
-      joyMove.setJoystickColor("rgba(120,220,255,0.65)");
-      joyMove.reverseLeftRight = false;
-      joyMove.reverseUpDown = true; // up on stick => +Y
-
-      joyLook = new VirtualJoystick(false);
-      joyLook.setJoystickColor("rgba(255,180,120,0.55)");
-      joyLook.reverseLeftRight = false;
-      joyLook.reverseUpDown = true;
-
-      // Make them less tiny
-      (joyMove as any)._joystickPointerID = -1;
-      (joyLook as any)._joystickPointerID = -1;
+      canvas.addEventListener("touchstart", onTouchStartGame, { passive: true });
+      canvas.addEventListener("touchmove", onTouchMoveGame, { passive: true });
+      canvas.addEventListener("touchend", onTouchEndGame, { passive: true });
+      canvas.addEventListener("touchcancel", onTouchEndGame, { passive: true });
     }
 
     // Pointer-based terrain sculpting
@@ -553,19 +635,22 @@ export function Dust() {
     engine.runRenderLoop(() => {
       const dt = engine.getDeltaTime() / 1000;
 
-      // update virtual joystick state
-      if (joyMove) {
-        const d = joyMove.deltaPosition;
-        joyState.mx = clamp(d.x / 60, -1, 1);
-        joyState.my = clamp(d.y / 60, -1, 1);
+      // update mobile stick state (bottom half drag)
+      if (touchMoveId != null) {
+        const dx = touchMoveNow.x - touchMoveStart.x;
+        const dy = touchMoveNow.y - touchMoveStart.y;
+        joyState.mx = clamp(dx / 60, -1, 1);
+        joyState.my = clamp(dy / 60, -1, 1);
       } else {
         joyState.mx = 0;
         joyState.my = 0;
       }
-      if (joyLook) {
-        const d = joyLook.deltaPosition;
-        joyState.lx = clamp(d.x / 70, -1, 1);
-        joyState.ly = clamp(d.y / 70, -1, 1);
+
+      if (touchLookId != null) {
+        const dx = touchLookNow.x - touchLookStart.x;
+        const dy = touchLookNow.y - touchLookStart.y;
+        joyState.lx = clamp(dx / 70, -1, 1);
+        joyState.ly = clamp(dy / 70, -1, 1);
       } else {
         joyState.lx = 0;
         joyState.ly = 0;
@@ -704,13 +789,20 @@ export function Dust() {
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("touchcancel", onTouchEnd);
+      // remove mobile listeners (added only on touch devices)
+      // (safe even if not registered)
       try {
-        joyMove?.releaseCanvas();
-        joyLook?.releaseCanvas();
+        canvas.removeEventListener("touchstart", onTouchStartGame as any);
+        canvas.removeEventListener("touchmove", onTouchMoveGame as any);
+        canvas.removeEventListener("touchend", onTouchEndGame as any);
+        canvas.removeEventListener("touchcancel", onTouchEndGame as any);
       } catch {}
-      joyMove = null;
-      joyLook = null;
+
       joyState = { mx: 0, my: 0, lx: 0, ly: 0 };
+      touchMoveId = null;
+      touchLookId = null;
+      pinchStartDist = 0;
+      pinchStartRadius = 0;
       scene.dispose();
       engine.dispose();
     };
