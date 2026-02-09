@@ -18,6 +18,7 @@ import {
   AnimationGroup,
   Skeleton,
   Bone,
+  AbstractMesh,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -50,6 +51,12 @@ function deadzone(v: number, dz: number) {
 
 function snapZero(v: number, eps: number) {
   return Math.abs(v) < eps ? 0 : v;
+}
+
+function wrapAngle(a: number) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
 }
 
 let joyState = { mx: 0, my: 0, lx: 0, ly: 0 };
@@ -339,6 +346,10 @@ export function Dust() {
 
     // Load rigged character + animations (Meshy export)
     let characterRoot: TransformNode | null = null;
+    let characterOffset: TransformNode | null = null;
+    let skinnedMesh: AbstractMesh | null = null;
+    let footL: Bone | null = null;
+    let footR: Bone | null = null;
     let walkAG: AnimationGroup | null = null;
     let runAG: AnimationGroup | null = null;
 
@@ -425,12 +436,14 @@ export function Dust() {
         stopAllCharacterAnims();
 
         characterRoot = new TransformNode("character", scene);
-        const characterOffset = new TransformNode("characterOffset", scene);
+        characterOffset = new TransformNode("characterOffset", scene);
         characterOffset.parent = characterRoot;
 
         for (const m of c.meshes) {
           if (m === scene.meshes[0]) continue;
           (m as any).parent = characterOffset;
+          // Capture a mesh that is skinned to the rig (used for bone absolute positions)
+          if (!skinnedMesh && (m as any).skeleton) skinnedMesh = m;
         }
 
         // Meshy exports tend to be huge in world units. Scale down.
@@ -446,6 +459,9 @@ export function Dust() {
         const bounds = characterOffset.getHierarchyBoundingVectors(true);
         characterOffset.position.y = -bounds.min.y;
 
+        // Try to find foot bones for robust foot-to-ground alignment.
+        footL = findBone("LeftFoot") || findBone("leftfoot") || findBone("mixamorig:LeftFoot") || null;
+        footR = findBone("RightFoot") || findBone("rightfoot") || findBone("mixamorig:RightFoot") || null;
         // Now attach to the player root
         characterRoot.parent = playerRoot;
         characterRoot.position.set(0, 0, 0);
@@ -758,12 +774,36 @@ export function Dust() {
         }
       }
 
-      // face movement direction
+      // face movement direction (from input intent; feels like a real game)
       const mv = new Vector3(vel.x, 0, vel.z);
       const mvl = mv.length();
-      if (mvl > 0.2) {
+      const intent = Math.hypot(input.moveX, input.moveY);
+      if (intent > 0.12 && desired.length() > 0.0001) {
+        const desiredYaw = Math.atan2(desired.x, desired.z);
+        // smooth turn
+        const turn = 14;
+        const a = clamp(turn * dt, 0, 1);
+        yaw = yaw + (wrapAngle(desiredYaw - yaw)) * a;
+        playerRoot.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
+      } else if (mvl > 0.2) {
         yaw = Math.atan2(mv.x, mv.z);
         playerRoot.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
+      }
+
+      // Re-align the visual mesh so feet actually contact ground.
+      // Bounds-based offsets can lie; foot bones are the robust source of truth.
+      if (characterOffset && skinnedMesh && (footL || footR)) {
+        try {
+          const feetY = playerRoot.getAbsolutePosition().y;
+          const lpos = footL ? footL.getAbsolutePosition(skinnedMesh) : null;
+          const rpos = footR ? footR.getAbsolutePosition(skinnedMesh) : null;
+          const fmin = Math.min(lpos?.y ?? Number.POSITIVE_INFINITY, rpos?.y ?? Number.POSITIVE_INFINITY);
+          if (Number.isFinite(fmin)) {
+            const dy = feetY - fmin;
+            // converge quickly without jitter
+            characterOffset.position.y += clamp(dy, -0.08, 0.08);
+          }
+        } catch {}
       }
 
       // switch animation based on *intent* (so tiny drift doesn't force running forever)
