@@ -16,6 +16,7 @@ import {
   SceneLoader,
   TransformNode,
   AnimationGroup,
+  Skeleton,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -325,7 +326,35 @@ export function Dust() {
     const base = (import.meta as any).env?.BASE_URL || "/";
     const join = (p: string) => (base.endsWith("/") ? base : base + "/") + p.replace(/^\//, "");
 
-    let rigSkeleton: any = null;
+    let rigSkeleton: Skeleton | null = null;
+    const stopAllCharacterAnims = () => {
+      // Nuke any active animatables (this stops “mystery animations” that aren't in our walk/run groups)
+      try {
+        scene.stopAllAnimations();
+      } catch {}
+
+      try {
+        rigSkeleton?.returnToRest();
+      } catch {}
+
+      // Also clear bone animation tracks if the GLB embedded them.
+      try {
+        for (const b of rigSkeleton?.bones || []) b.animations = [];
+      } catch {}
+
+      if (walkAG) {
+        try {
+          walkAG.stop();
+          walkAG.goToFrame(0);
+        } catch {}
+      }
+      if (runAG) {
+        try {
+          runAG.stop();
+          runAG.goToFrame(0);
+        } catch {}
+      }
+    };
 
     const loadCharacter = async () => {
       try {
@@ -341,9 +370,7 @@ export function Dust() {
         }
 
         rigSkeleton = (c.skeletons && c.skeletons[0]) || null;
-        try {
-          rigSkeleton?.returnToRest?.();
-        } catch {}
+        stopAllCharacterAnims();
 
         characterRoot = new TransformNode("character", scene);
         for (const m of c.meshes) {
@@ -513,20 +540,23 @@ export function Dust() {
         if (walkAG && runAG) {
           if (!moving) {
             // Stop everything every frame to prevent “stuck started” states.
-            walkAG.stop();
-            runAG.stop();
-            walkAG.goToFrame(0);
-            runAG.goToFrame(0);
-            try {
-              rigSkeleton?.returnToRest?.();
-            } catch {}
+            stopAllCharacterAnims();
             anim = "idle";
           } else if (running) {
-            walkAG.stop();
+            // ensure no other animations are competing
+            try {
+              for (const ag of scene.animationGroups) {
+                if (ag !== runAG) ag.stop();
+              }
+            } catch {}
             if (!runAG.isStarted) runAG.start(true, 1.0);
             anim = "run";
           } else {
-            runAG.stop();
+            try {
+              for (const ag of scene.animationGroups) {
+                if (ag !== walkAG) ag.stop();
+              }
+            } catch {}
             if (!walkAG.isStarted) walkAG.start(true, 1.0);
             anim = "walk";
           }
