@@ -5,6 +5,7 @@ const root = process.cwd();
 const dist = path.join(root, 'dist');
 const snakeDir = path.join(dist, 'ultimate-snake');
 const arcDir = path.join(dist, 'ultimate-brick-breaker');
+const dustDir = path.join(dist, 'element-weaver');
 
 fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
 
@@ -18,6 +19,11 @@ if (!fs.existsSync(arcDir)) {
   process.exit(1);
 }
 
+if (!fs.existsSync(dustDir)) {
+  console.error('Expected game output at', dustDir);
+  process.exit(1);
+}
+
 // Copy portal homepage to dist root
 fs.copyFileSync(path.join(root, 'portal', 'index.html'), path.join(dist, 'index.html'));
 fs.copyFileSync(path.join(root, 'portal', 'portal.css'), path.join(dist, 'portal.css'));
@@ -25,4 +31,4 @@ fs.copyFileSync(path.join(root, 'portal', 'portal.css'), path.join(dist, 'portal
 // Copy favicon to dist root
 fs.copyFileSync(path.join(root, 'public', 'favicon.svg'), path.join(dist, 'favicon.svg'));
 
-console.log('Pages postbuild complete. dist contains portal + /ultimate-snake/ + /ultimate-brick-breaker/.');
+console.log('Pages postbuild complete. dist contains portal + /ultimate-snake/ + /ultimate-brick-breaker/ + /element-weaver/.');

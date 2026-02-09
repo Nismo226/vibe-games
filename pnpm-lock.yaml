@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@babylonjs/core':
+        specifier: ^8.50.2
+        version: 8.50.2
+      '@babylonjs/loaders':
+        specifier: ^8.50.2
+        version: 8.50.2(@babylonjs/core@8.50.2)(babylonjs-gltf2interface@8.50.2)
       '@tauri-apps/api':
         specifier: ^2
         version: 2.10.1
@@ -124,6 +130,15 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
+
+  '@babylonjs/core@8.50.2':
+    resolution: {integrity: sha512-3NaQ2zRhO0n2kDhtN2VtRnp09PzJT13+plAZwfnXYWekrgthgjuwhcNvuGLU/D7xft+/tKAljo92k4O4SuX7Jw==}
+
+  '@babylonjs/loaders@8.50.2':
+    resolution: {integrity: sha512-FuQcDvf852W0VrQtSJ+TunprsQFx6Al5mliNzk/JzmRDGqfjJTODTw00GiRXD0uQqouYLO/ncMILqmax2n2t1Q==}
+    peerDependencies:
+      '@babylonjs/core': ^8.0.0
+      babylonjs-gltf2interface: ^8.0.0
 
   '@esbuild/aix-ppc64@0.27.3':
     resolution: {integrity: sha512-9fJMTNFTWZMh5qwrBItuziu834eOCUcEqymSH7pY+zoMVEZg3gcPuBNxH1EvfVYe9h0x/Ptw8KBzv7qxb7l8dg==}
@@ -549,6 +564,9 @@ packages:
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
 
+  babylonjs-gltf2interface@8.50.2:
+    resolution: {integrity: sha512-Wu6Y30SFQHWyJwXNN37TMmh1uxNSStBtJohOXRUCe8YkCC6/f+9O0dRffdMhhEWFIgcsbNolLLWGPbsxlkkHIA==}
+
   baseline-browser-mapping@2.9.19:
     resolution: {integrity: sha512-ipDqC8FrAl/76p2SSWKSI+H9tFwm7vYqXQrItCuiVPt26Km0jS+NzSsBWAaBusvSbQcfJG+JitdMm+wZAgTYqg==}
     hasBin: true
@@ -845,6 +863,13 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
+  '@babylonjs/core@8.50.2': {}
+
+  '@babylonjs/loaders@8.50.2(@babylonjs/core@8.50.2)(babylonjs-gltf2interface@8.50.2)':
+    dependencies:
+      '@babylonjs/core': 8.50.2
+      babylonjs-gltf2interface: 8.50.2
+
   '@esbuild/aix-ppc64@0.27.3':
     optional: true
 
@@ -1114,6 +1139,8 @@ snapshots:
       vite: 7.3.1
     transitivePeerDependencies:
       - supports-color
+
+  babylonjs-gltf2interface@8.50.2: {}
 
   baseline-browser-mapping@2.9.19: {}
 
