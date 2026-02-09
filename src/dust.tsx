@@ -29,6 +29,9 @@ type InputState = {
   lookY: number; // -1..1
   act: boolean;
   alt: boolean;
+
+  // debug
+  gp?: { axes: number[]; id?: string };
 };
 
 function clamp(n: number, a: number, b: number) {
@@ -69,12 +72,15 @@ function pollInput(keys: Set<string>): InputState {
   // gamepad (best effort)
   const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
   const gp = pads[0];
+  let gpDbg: InputState["gp"] | undefined;
   if (gp) {
+    gpDbg = { axes: Array.from(gp.axes || []), id: gp.id };
+
     // bigger deadzone to prevent drift (most controllers report slight non-zero)
-    const ax0 = deadzone(gp.axes[0] ?? 0, 0.22);
-    const ax1 = deadzone(-(gp.axes[1] ?? 0), 0.22);
-    const ax2 = deadzone(gp.axes[2] ?? 0, 0.18);
-    const ax3 = deadzone(-(gp.axes[3] ?? 0), 0.18);
+    const ax0 = deadzone(gp.axes[0] ?? 0, 0.28);
+    const ax1 = deadzone(-(gp.axes[1] ?? 0), 0.28);
+    const ax2 = deadzone(gp.axes[2] ?? 0, 0.22);
+    const ax3 = deadzone(-(gp.axes[3] ?? 0), 0.22);
 
     mx += ax0;
     my += ax1;
@@ -87,10 +93,16 @@ function pollInput(keys: Set<string>): InputState {
     alt = alt || !!gp.buttons?.[6]?.pressed;
   }
 
-  mx = snapZero(mx, 0.03);
-  my = snapZero(my, 0.03);
-  lx = snapZero(lx, 0.03);
-  ly = snapZero(ly, 0.03);
+  mx = snapZero(mx, 0.05);
+  my = snapZero(my, 0.05);
+  lx = snapZero(lx, 0.05);
+  ly = snapZero(ly, 0.05);
+
+  // If you have no intentional movement, clamp to zero (prevents “ghost walking”).
+  if (Math.hypot(mx, my) < 0.08) {
+    mx = 0;
+    my = 0;
+  }
 
   // normalize move
   const ml = Math.hypot(mx, my);
@@ -106,11 +118,13 @@ function pollInput(keys: Set<string>): InputState {
     lookY: clamp(ly, -1, 1),
     act,
     alt,
+    gp: gpDbg,
   };
 }
 
 export function Dust() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const debugRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -414,6 +428,8 @@ export function Dust() {
     let yaw = 0;
     const vel = new Vector3(0, 0, 0);
 
+    let dbgAccum = 0;
+
     engine.runRenderLoop(() => {
       const dt = engine.getDeltaTime() / 1000;
       const input = pollInput(keys);
@@ -467,31 +483,45 @@ export function Dust() {
       }
 
       // switch animation based on *intent* (so tiny drift doesn't force running forever)
+      let anim = "idle";
       {
         const intent = Math.hypot(input.moveX, input.moveY);
         const sp2 = Math.hypot(vel.x, vel.z);
-        const running = intent > 0.72 || sp2 > 6.8;
-        const moving = intent > 0.12;
+        const running = intent > 0.78 || sp2 > 7.4;
+        const moving = intent > 0.14;
 
         if (walkAG && runAG) {
           if (!moving) {
-            if (walkAG.isStarted) walkAG.stop();
-            if (runAG.isStarted) runAG.stop();
-            // hard reset to first frame so it doesn't freeze mid-stride
+            // Stop everything every frame to prevent “stuck started” states.
+            walkAG.stop();
+            runAG.stop();
             walkAG.goToFrame(0);
             runAG.goToFrame(0);
+            anim = "idle";
           } else if (running) {
-            if (walkAG.isStarted) walkAG.stop();
+            walkAG.stop();
             if (!runAG.isStarted) runAG.start(true, 1.0);
+            anim = "run";
           } else {
-            if (runAG.isStarted) runAG.stop();
+            runAG.stop();
             if (!walkAG.isStarted) walkAG.start(true, 1.0);
+            anim = "walk";
           }
 
           // drive playback speed a bit
           walkAG.speedRatio = clamp(sp2 / 4.2, 0.6, 1.35);
           runAG.speedRatio = clamp(sp2 / 7.8, 0.8, 1.5);
         }
+      }
+
+      // debug HUD (update ~4x/sec)
+      dbgAccum += dt;
+      if (debugRef.current && dbgAccum > 0.25) {
+        dbgAccum = 0;
+        const intent = Math.hypot(input.moveX, input.moveY);
+        const sp2 = Math.hypot(vel.x, vel.z);
+        const ax = input.gp?.axes?.slice(0, 4).map((v) => (Math.round(v * 1000) / 1000).toFixed(3)).join(",") ?? "-";
+        debugRef.current.textContent = `anim=${anim} intent=${intent.toFixed(2)} speed=${sp2.toFixed(2)} mx=${input.moveX.toFixed(2)} my=${input.moveY.toFixed(2)} gpAxes=${ax}`;
       }
 
       // terrain sculpt while holding input
@@ -539,6 +569,21 @@ export function Dust() {
       >
         {"ELEMENT WEAVER (prototype)\nmove: WASD / left stick • camera: mouse / right stick\nsculpt: hold (mouse) or touch • 2-finger touch lowers"}
       </div>
+
+      <div
+        ref={(el) => {
+          debugRef.current = el;
+        }}
+        style={{
+          position: "absolute",
+          left: 16,
+          top: 64,
+          color: "rgba(180,220,255,0.70)",
+          font: "600 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
+      />
     </div>
   );
 }
