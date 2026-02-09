@@ -620,7 +620,7 @@ export function Dust() {
           whiteSpace: "pre-line",
         }}
       >
-        {"ELEMENT WEAVER (prototype)\nmove: WASD / left stick • camera: mouse / right stick\nsculpt: hold (mouse) or touch • 2-finger touch lowers"}
+        {`ELEMENT WEAVER (prototype) v${(import.meta as any).env?.VITE_BUILD_ID || "?"}\nmove: WASD / left stick • camera: mouse / right stick\nsculpt: hold (mouse) or touch • 2-finger touch lowers`}
       </div>
 
       <div
