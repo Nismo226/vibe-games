@@ -538,7 +538,7 @@ export function Dust() {
           const d = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
           if (pinchStartDist > 0) {
             const k = d / pinchStartDist;
-            cam.radius = clamp(pinchStartRadius / Math.max(0.25, k), 6, 26);
+            cam.radius = clamp(pinchStartRadius / Math.max(0.25, k), 6, 42);
           }
         }
       }
@@ -695,7 +695,8 @@ export function Dust() {
         const h0 = h00 + (h10 - h00) * tx;
         const h1 = h01 + (h11 - h01) * tx;
         const hh = h0 + (h1 - h0) * tz;
-        playerRoot.position.y = hh + 1.2;
+        // Raise collider/root so visual feet don't clip.
+        playerRoot.position.y = hh + 1.55;
       }
 
       // face movement direction
