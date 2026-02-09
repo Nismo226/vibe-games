@@ -17,6 +17,7 @@ import {
   TransformNode,
   AnimationGroup,
   Skeleton,
+  Bone,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -327,6 +328,7 @@ export function Dust() {
     const join = (p: string) => (base.endsWith("/") ? base : base + "/") + p.replace(/^\//, "");
 
     let rigSkeleton: Skeleton | null = null;
+
     const stopAllCharacterAnims = () => {
       // Nuke any active animatables (this stops “mystery animations” that aren't in our walk/run groups)
       try {
@@ -354,6 +356,24 @@ export function Dust() {
           runAG.goToFrame(0);
         } catch {}
       }
+    };
+
+    const retargetGroupToRig = (src: AnimationGroup): AnimationGroup => {
+      // Clone the animation group and remap its targets (bones/nodes) to our rig.
+      return src.clone(`${src.name}_rt`, (oldTarget: any) => {
+        if (!oldTarget) return null;
+
+        // Bone target
+        if (oldTarget instanceof Bone) {
+          const name = oldTarget.name;
+          return rigSkeleton?.bones.find((b) => b.name === name) ?? null;
+        }
+
+        // TransformNode/Mesh target
+        const nm = oldTarget.name;
+        if (nm) return scene.getNodeByName(nm);
+        return null;
+      })!;
     };
 
     const loadCharacter = async () => {
@@ -389,10 +409,20 @@ export function Dust() {
 
         placeholder.setEnabled(false);
 
-        const w = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "walk.glb", scene);
-        walkAG = w.animationGroups?.[0] ?? null;
-        const r = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "run.glb", scene);
-        runAG = r.animationGroups?.[0] ?? null;
+        // Load animations from separate GLBs and retarget to the character skeleton.
+        // (ImportAnimationsAsync often won't bind correctly across GLBs.)
+        const walkC = await SceneLoader.LoadAssetContainerAsync(join("element-weaver/models/"), "walk.glb", scene);
+        const runC = await SceneLoader.LoadAssetContainerAsync(join("element-weaver/models/"), "run.glb", scene);
+
+        const walkSrc = walkC.animationGroups?.[0];
+        const runSrc = runC.animationGroups?.[0];
+
+        if (walkSrc) walkAG = retargetGroupToRig(walkSrc);
+        if (runSrc) runAG = retargetGroupToRig(runSrc);
+
+        // clean up loaded containers (we only needed their animation data)
+        walkC.dispose();
+        runC.dispose();
 
         // Start in idle (no anim). We only play walk/run when there's real movement intent.
         walkAG?.stop();
