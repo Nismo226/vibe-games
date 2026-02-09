@@ -155,12 +155,16 @@ export function Dust() {
     );
     scene.createDefaultEnvironment({
       createSkybox: true,
-      skyboxSize: 250,
+      skyboxSize: 1200,
     });
+    // Light haze helps sell depth
+    scene.fogMode = Scene.FOGMODE_EXP2;
+    scene.fogDensity = 0.0022;
+    scene.fogColor = new Color3(0.55, 0.72, 0.92);
 
     // Ground (heightmap grid)
-    const TERR_W = 120;
-    const TERR_H = 120;
+    const TERR_W = 420;
+    const TERR_H = 420;
     const SUB = 128;
     const ground = MeshBuilder.CreateGround("ground", { width: TERR_W, height: TERR_H, subdivisions: SUB }, scene);
     const gmat = new StandardMaterial("gmat", scene);
@@ -321,9 +325,26 @@ export function Dust() {
     const base = (import.meta as any).env?.BASE_URL || "/";
     const join = (p: string) => (base.endsWith("/") ? base : base + "/") + p.replace(/^\//, "");
 
+    let rigSkeleton: any = null;
+
     const loadCharacter = async () => {
       try {
         const c = await SceneLoader.ImportMeshAsync(null, join("element-weaver/models/"), "character.glb", scene);
+
+        // Some GLBs include a default animation that starts playing immediately.
+        // Stop/reset anything that came with the character file.
+        for (const ag of c.animationGroups || []) {
+          try {
+            ag.stop();
+            ag.goToFrame(0);
+          } catch {}
+        }
+
+        rigSkeleton = (c.skeletons && c.skeletons[0]) || null;
+        try {
+          rigSkeleton?.returnToRest?.();
+        } catch {}
+
         characterRoot = new TransformNode("character", scene);
         for (const m of c.meshes) {
           if (m === scene.meshes[0]) continue;
@@ -334,7 +355,6 @@ export function Dust() {
         characterRoot.scaling.setAll(0.18);
 
         // Auto place the model so its feet touch the ground (after scaling)
-        // We compute bounds in local space by temporarily parenting at origin.
         characterRoot.position = new Vector3(0, 0, 0);
         const bounds = characterRoot.getHierarchyBoundingVectors(true);
         const minY = bounds.min.y;
@@ -359,9 +379,9 @@ export function Dust() {
     loadCharacter();
 
     // Follow camera (third-person)
-    const cam = new FollowCamera("cam", new Vector3(0, 2.2, -6.5), scene);
-    cam.radius = 6.5;
-    cam.heightOffset = 2.1;
+    const cam = new FollowCamera("cam", new Vector3(0, 2.2, -12.5), scene);
+    cam.radius = 12.5;
+    cam.heightOffset = 3.1;
     cam.rotationOffset = 180;
     cam.cameraAcceleration = 0.05;
     cam.maxCameraSpeed = 10;
@@ -497,6 +517,9 @@ export function Dust() {
             runAG.stop();
             walkAG.goToFrame(0);
             runAG.goToFrame(0);
+            try {
+              rigSkeleton?.returnToRest?.();
+            } catch {}
             anim = "idle";
           } else if (running) {
             walkAG.stop();
