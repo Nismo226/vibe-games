@@ -13,6 +13,9 @@ import {
   CubeTexture,
   VertexBuffer,
   Texture,
+  SceneLoader,
+  TransformNode,
+  AnimationGroup,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -271,12 +274,51 @@ export function Dust() {
     }
 
 
-    // Player avatar (placeholder)
-    const player = MeshBuilder.CreateCapsule("player", { radius: 0.45, height: 1.75, tessellation: 12 }, scene);
-    player.position = new Vector3(0, 1.2, 0);
+    // Player root (mesh so FollowCamera typing is happy)
+    const playerRoot = MeshBuilder.CreateBox("playerRoot", { size: 0.01 }, scene);
+    playerRoot.isVisible = false;
+    playerRoot.position = new Vector3(0, 1.2, 0);
+
+    // Placeholder body while GLB loads
+    const placeholder = MeshBuilder.CreateCapsule("playerPlaceholder", { radius: 0.45, height: 1.75, tessellation: 12 }, scene);
+    placeholder.parent = playerRoot;
     const pmat = new StandardMaterial("pmat", scene);
     pmat.diffuseColor = new Color3(0.8, 0.88, 0.95);
-    player.material = pmat;
+    placeholder.material = pmat;
+
+    // Load rigged character + animations (Meshy export)
+    let characterRoot: TransformNode | null = null;
+    let walkAG: AnimationGroup | null = null;
+    let runAG: AnimationGroup | null = null;
+
+    const base = (import.meta as any).env?.BASE_URL || "/";
+    const join = (p: string) => (base.endsWith("/") ? base : base + "/") + p.replace(/^\//, "");
+
+    const loadCharacter = async () => {
+      try {
+        const c = await SceneLoader.ImportMeshAsync(null, join("element-weaver/models/"), "character.glb", scene);
+        characterRoot = new TransformNode("character", scene);
+        for (const m of c.meshes) {
+          if (m === scene.meshes[0]) continue;
+          (m as any).parent = characterRoot;
+        }
+        characterRoot.parent = playerRoot;
+        characterRoot.scaling.setAll(1.0);
+        characterRoot.position = new Vector3(0, -1.2, 0);
+        placeholder.setEnabled(false);
+
+        const w = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "walk.glb", scene);
+        walkAG = w.animationGroups?.[0] ?? null;
+        const r = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "run.glb", scene);
+        runAG = r.animationGroups?.[0] ?? null;
+
+        walkAG?.start(true, 1.0);
+        runAG?.stop();
+      } catch {
+        // keep placeholder
+      }
+    };
+    loadCharacter();
 
     // Follow camera (third-person)
     const cam = new FollowCamera("cam", new Vector3(0, 2.2, -6.5), scene);
@@ -285,7 +327,7 @@ export function Dust() {
     cam.rotationOffset = 180;
     cam.cameraAcceleration = 0.05;
     cam.maxCameraSpeed = 10;
-    cam.lockedTarget = player;
+    cam.lockedTarget = playerRoot;
 
     scene.activeCamera = cam;
     cam.attachControl(true);
@@ -369,13 +411,13 @@ export function Dust() {
       vel.x += (desired.x * sp - vel.x) * clamp(accel * dt, 0, 1);
       vel.z += (desired.z * sp - vel.z) * clamp(accel * dt, 0, 1);
 
-      player.position.x += vel.x * dt;
-      player.position.z += vel.z * dt;
+      playerRoot.position.x += vel.x * dt;
+      playerRoot.position.z += vel.z * dt;
 
       // ground clamp (simple sample from height grid)
       {
-        const gx = ((player.position.x / TERR_W) + 0.5) * SUB;
-        const gz = ((player.position.z / TERR_H) + 0.5) * SUB;
+        const gx = ((playerRoot.position.x / TERR_W) + 0.5) * SUB;
+        const gz = ((playerRoot.position.z / TERR_H) + 0.5) * SUB;
         const x0 = Math.max(0, Math.min(SUB, Math.floor(gx)));
         const z0 = Math.max(0, Math.min(SUB, Math.floor(gz)));
         const x1 = Math.max(0, Math.min(SUB, x0 + 1));
@@ -389,7 +431,7 @@ export function Dust() {
         const h0 = h00 + (h10 - h00) * tx;
         const h1 = h01 + (h11 - h01) * tx;
         const hh = h0 + (h1 - h0) * tz;
-        player.position.y = hh + 1.2;
+        playerRoot.position.y = hh + 1.2;
       }
 
       // face movement direction
@@ -397,7 +439,25 @@ export function Dust() {
       const mvl = mv.length();
       if (mvl > 0.2) {
         yaw = Math.atan2(mv.x, mv.z);
-        player.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
+        playerRoot.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
+      }
+
+      // switch animation based on speed
+      {
+        const sp2 = Math.hypot(vel.x, vel.z);
+        const running = sp2 > 6.2;
+        if (walkAG && runAG) {
+          if (running) {
+            if (!runAG.isStarted) runAG.start(true, 1.0);
+            if (walkAG.isStarted) walkAG.stop();
+          } else {
+            if (!walkAG.isStarted) walkAG.start(true, 1.0);
+            if (runAG.isStarted) runAG.stop();
+          }
+          // drive playback speed a bit
+          walkAG.speedRatio = clamp(sp2 / 4.2, 0.6, 1.35);
+          runAG.speedRatio = clamp(sp2 / 7.8, 0.8, 1.5);
+        }
       }
 
       // terrain sculpt while holding input
