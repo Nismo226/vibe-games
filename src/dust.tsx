@@ -429,15 +429,23 @@ export function Dust() {
           if (m === scene.meshes[0]) continue;
           (m as any).parent = characterRoot;
         }
-        characterRoot.parent = playerRoot;
+
+        // IMPORTANT: compute bounds with the character at world origin (unparented),
+        // otherwise the parent (playerRoot) Y offset contaminates minY and we shove the
+        // model into the ground.
+        characterRoot.parent = null;
+
         // Meshy exports tend to be huge in world units. Scale down.
         characterRoot.scaling.setAll(0.18);
 
-        // Auto place the model so its feet touch the ground (after scaling)
+        // Auto place the model so its feet touch local Y=0 (after scaling)
         characterRoot.position = new Vector3(0, 0, 0);
+        characterRoot.computeWorldMatrix(true);
         const bounds = characterRoot.getHierarchyBoundingVectors(true);
-        const minY = bounds.min.y;
-        characterRoot.position = new Vector3(0, -minY, 0);
+        characterRoot.position.y = -bounds.min.y;
+
+        // Now attach to the player root (playerRoot.y is feet height)
+        characterRoot.parent = playerRoot;
 
         placeholder.setEnabled(false);
 
