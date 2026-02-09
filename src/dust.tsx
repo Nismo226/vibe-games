@@ -43,6 +43,10 @@ function deadzone(v: number, dz: number) {
   return Math.sign(v) * s;
 }
 
+function snapZero(v: number, eps: number) {
+  return Math.abs(v) < eps ? 0 : v;
+}
+
 function pollInput(keys: Set<string>): InputState {
   // keyboard
   let mx = 0;
@@ -66,10 +70,11 @@ function pollInput(keys: Set<string>): InputState {
   const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
   const gp = pads[0];
   if (gp) {
-    const ax0 = deadzone(gp.axes[0] ?? 0, 0.15);
-    const ax1 = deadzone(-(gp.axes[1] ?? 0), 0.15);
-    const ax2 = deadzone(gp.axes[2] ?? 0, 0.12);
-    const ax3 = deadzone(-(gp.axes[3] ?? 0), 0.12);
+    // bigger deadzone to prevent drift (most controllers report slight non-zero)
+    const ax0 = deadzone(gp.axes[0] ?? 0, 0.22);
+    const ax1 = deadzone(-(gp.axes[1] ?? 0), 0.22);
+    const ax2 = deadzone(gp.axes[2] ?? 0, 0.18);
+    const ax3 = deadzone(-(gp.axes[3] ?? 0), 0.18);
 
     mx += ax0;
     my += ax1;
@@ -81,6 +86,11 @@ function pollInput(keys: Set<string>): InputState {
     // LT / L2
     alt = alt || !!gp.buttons?.[6]?.pressed;
   }
+
+  mx = snapZero(mx, 0.03);
+  my = snapZero(my, 0.03);
+  lx = snapZero(lx, 0.03);
+  ly = snapZero(ly, 0.03);
 
   // normalize move
   const ml = Math.hypot(mx, my);
@@ -143,8 +153,11 @@ export function Dust() {
     // Lightweight "grass" look (procedural-ish) without external downloads.
     // Use a tiled noise texture for detail + vertex colors for slope/height blending.
     const grassTex = new Texture("https://assets.babylonjs.com/textures/grass.png", scene, true, false);
-    grassTex.uScale = 30;
-    grassTex.vScale = 30;
+    grassTex.uScale = 22;
+    grassTex.vScale = 22;
+    // make it sharper at grazing angles
+    grassTex.anisotropicFilteringLevel = 12;
+    grassTex.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
     gmat.diffuseTexture = grassTex;
     gmat.specularColor = new Color3(0.03, 0.03, 0.03);
     gmat.specularPower = 64;
@@ -303,8 +316,10 @@ export function Dust() {
           (m as any).parent = characterRoot;
         }
         characterRoot.parent = playerRoot;
-        characterRoot.scaling.setAll(1.0);
-        characterRoot.position = new Vector3(0, -1.2, 0);
+        // Meshy exports tend to be huge in world units. Scale down.
+        characterRoot.scaling.setAll(0.18);
+        // Drop the model so feet sit near ground (tweakable)
+        characterRoot.position = new Vector3(0, -1.18, 0);
         placeholder.setEnabled(false);
 
         const w = await SceneLoader.ImportAnimationsAsync(join("element-weaver/models/"), "walk.glb", scene);
@@ -442,18 +457,25 @@ export function Dust() {
         playerRoot.rotationQuaternion = Quaternion.FromEulerAngles(0, yaw, 0);
       }
 
-      // switch animation based on speed
+      // switch animation based on *intent* (so tiny drift doesn't force running forever)
       {
+        const intent = Math.hypot(input.moveX, input.moveY);
         const sp2 = Math.hypot(vel.x, vel.z);
-        const running = sp2 > 6.2;
+        const running = intent > 0.7 || sp2 > 6.8;
+        const moving = intent > 0.08;
+
         if (walkAG && runAG) {
-          if (running) {
-            if (!runAG.isStarted) runAG.start(true, 1.0);
+          if (!moving) {
             if (walkAG.isStarted) walkAG.stop();
-          } else {
-            if (!walkAG.isStarted) walkAG.start(true, 1.0);
             if (runAG.isStarted) runAG.stop();
+          } else if (running) {
+            if (walkAG.isStarted) walkAG.stop();
+            if (!runAG.isStarted) runAG.start(true, 1.0);
+          } else {
+            if (runAG.isStarted) runAG.stop();
+            if (!walkAG.isStarted) walkAG.start(true, 1.0);
           }
+
           // drive playback speed a bit
           walkAG.speedRatio = clamp(sp2 / 4.2, 0.6, 1.35);
           runAG.speedRatio = clamp(sp2 / 7.8, 0.8, 1.5);
