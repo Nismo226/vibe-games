@@ -425,36 +425,30 @@ export function Dust() {
         stopAllCharacterAnims();
 
         characterRoot = new TransformNode("character", scene);
+        const characterOffset = new TransformNode("characterOffset", scene);
+        characterOffset.parent = characterRoot;
+
         for (const m of c.meshes) {
           if (m === scene.meshes[0]) continue;
-          (m as any).parent = characterRoot;
+          (m as any).parent = characterOffset;
         }
-
-        // IMPORTANT: compute bounds with the character at world origin (unparented),
-        // otherwise the parent (playerRoot) Y offset contaminates minY and we shove the
-        // model into the ground.
-        characterRoot.parent = null;
 
         // Meshy exports tend to be huge in world units. Scale down.
         characterRoot.scaling.setAll(0.18);
 
-        // Auto place the model so its feet touch local Y=0 (after scaling)
-        characterRoot.position = new Vector3(0, 0, 0);
+        // IMPORTANT: playerRoot.y is treated as *feet height*.
+        // Therefore the pivot (characterRoot) stays at (0,0,0) relative to playerRoot,
+        // and we offset the imported meshes so their minY lands on local Y=0.
+        characterRoot.parent = null;
+        characterRoot.position.set(0, 0, 0);
+        characterOffset.position.set(0, 0, 0);
         characterRoot.computeWorldMatrix(true);
-        const bounds = characterRoot.getHierarchyBoundingVectors(true);
-        characterRoot.position.y = -bounds.min.y;
+        const bounds = characterOffset.getHierarchyBoundingVectors(true);
+        characterOffset.position.y = -bounds.min.y;
 
-        // Now attach to the player root (playerRoot.y is feet height)
+        // Now attach to the player root
         characterRoot.parent = playerRoot;
-
-        // Re-align feet to ground in world space (robust against weird export pivots)
-        try {
-          characterRoot.computeWorldMatrix(true);
-          const b2 = characterRoot.getHierarchyBoundingVectors(true);
-          const feetY = playerRoot.getAbsolutePosition().y;
-          const dy = feetY - b2.min.y;
-          characterRoot.position.y += dy;
-        } catch {}
+        characterRoot.position.set(0, 0, 0);
 
         placeholder.setEnabled(false);
 
@@ -734,9 +728,8 @@ export function Dust() {
         };
 
         const h = sampleHeight(playerRoot.position.x, playerRoot.position.z);
-        const targetY = h + 0.02; // tiny lift to prevent z-fighting / sinking
-        // Smooth snap so it feels grounded but not jittery
-        playerRoot.position.y += (targetY - playerRoot.position.y) * clamp(24 * dt, 0, 1);
+        // hard snap so the feet never hover/sink; we can add smoothing later once capsule collision exists
+        playerRoot.position.y = h + 0.02;
       }
 
       // face movement direction
