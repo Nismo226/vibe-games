@@ -18,6 +18,7 @@ import {
   AnimationGroup,
   Skeleton,
   Bone,
+  VirtualJoystick,
 } from "@babylonjs/core";
 import "@babylonjs/loaders";
 
@@ -51,6 +52,10 @@ function deadzone(v: number, dz: number) {
 function snapZero(v: number, eps: number) {
   return Math.abs(v) < eps ? 0 : v;
 }
+
+let joyMove: VirtualJoystick | null = null;
+let joyLook: VirtualJoystick | null = null;
+let joyState = { mx: 0, my: 0, lx: 0, ly: 0 };
 
 function pollInput(keys: Set<string>): InputState {
   // keyboard
@@ -105,6 +110,12 @@ function pollInput(keys: Set<string>): InputState {
     mx = 0;
     my = 0;
   }
+
+  // mobile virtual joysticks (if present)
+  mx += joyState.mx;
+  my += joyState.my;
+  lx += joyState.lx;
+  ly += joyState.ly;
 
   // normalize move
   const ml = Math.hypot(mx, my);
@@ -467,6 +478,24 @@ export function Dust() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
+    // Mobile controls: virtual joysticks (move + camera)
+    const isTouchDevice = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+    if (isTouchDevice) {
+      joyMove = new VirtualJoystick(true);
+      joyMove.setJoystickColor("rgba(120,220,255,0.65)");
+      joyMove.reverseLeftRight = false;
+      joyMove.reverseUpDown = true; // up on stick => +Y
+
+      joyLook = new VirtualJoystick(false);
+      joyLook.setJoystickColor("rgba(255,180,120,0.55)");
+      joyLook.reverseLeftRight = false;
+      joyLook.reverseUpDown = true;
+
+      // Make them less tiny
+      (joyMove as any)._joystickPointerID = -1;
+      (joyLook as any)._joystickPointerID = -1;
+    }
+
     // Pointer-based terrain sculpting
     // Desktop: LMB raise, RMB lower.
     // Mobile: 1 finger = raise, 2 fingers = lower.
@@ -523,11 +552,30 @@ export function Dust() {
 
     engine.runRenderLoop(() => {
       const dt = engine.getDeltaTime() / 1000;
+
+      // update virtual joystick state
+      if (joyMove) {
+        const d = joyMove.deltaPosition;
+        joyState.mx = clamp(d.x / 60, -1, 1);
+        joyState.my = clamp(d.y / 60, -1, 1);
+      } else {
+        joyState.mx = 0;
+        joyState.my = 0;
+      }
+      if (joyLook) {
+        const d = joyLook.deltaPosition;
+        joyState.lx = clamp(d.x / 70, -1, 1);
+        joyState.ly = clamp(d.y / 70, -1, 1);
+      } else {
+        joyState.lx = 0;
+        joyState.ly = 0;
+      }
+
       const input = pollInput(keys);
 
-      // camera look with right stick (adjust follow camera rotation offset)
+      // camera look with right stick / virtual joystick
       cam.rotationOffset += input.lookX * 110 * dt;
-      cam.heightOffset = clamp(cam.heightOffset + input.lookY * 2.2 * dt, 1.2, 3.2);
+      cam.heightOffset = clamp(cam.heightOffset + input.lookY * 2.2 * dt, 1.2, 4.2);
 
       // move relative to camera forward
       const ang = (cam.rotationOffset * Math.PI) / 180;
@@ -656,6 +704,13 @@ export function Dust() {
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("touchcancel", onTouchEnd);
+      try {
+        joyMove?.releaseCanvas();
+        joyLook?.releaseCanvas();
+      } catch {}
+      joyMove = null;
+      joyLook = null;
+      joyState = { mx: 0, my: 0, lx: 0, ly: 0 };
       scene.dispose();
       engine.dispose();
     };
@@ -677,7 +732,7 @@ export function Dust() {
           whiteSpace: "pre-line",
         }}
       >
-        {`ELEMENT WEAVER (prototype) v${(import.meta as any).env?.VITE_BUILD_ID || "?"}\nmove: WASD / left stick • camera: mouse / right stick\nsculpt: hold (mouse) or touch • 2-finger touch lowers`}
+        {`ELEMENT WEAVER (prototype) v${(import.meta as any).env?.VITE_BUILD_ID || "?"}\nmove: WASD / left stick (mobile: left joystick)\ncamera: mouse / right stick (mobile: right joystick)\nsculpt: hold (mouse) or touch • 2-finger touch lowers`}
       </div>
 
       <div
