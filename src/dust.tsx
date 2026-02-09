@@ -331,6 +331,8 @@ export function Dust() {
     // Placeholder body while GLB loads
     const placeholder = MeshBuilder.CreateCapsule("playerPlaceholder", { radius: 0.45, height: 1.75, tessellation: 12 }, scene);
     placeholder.parent = playerRoot;
+    // Keep the placeholder resting on the ground when playerRoot.y == groundHeight
+    placeholder.position.y = 1.75 * 0.5;
     const pmat = new StandardMaterial("pmat", scene);
     pmat.diffuseColor = new Color3(0.8, 0.88, 0.95);
     placeholder.material = pmat;
@@ -636,11 +638,25 @@ export function Dust() {
       const dt = engine.getDeltaTime() / 1000;
 
       // update mobile stick state (bottom half drag)
+      const stick = (dx: number, dy: number, denom: number) => {
+        // dy: screen coords (down is +). For game controls we want up=+.
+        let x = dx / denom;
+        let y = -dy / denom;
+        const l = Math.hypot(x, y);
+        const dead = 0.12;
+        if (l < dead) return { x: 0, y: 0 };
+        const nl = clamp((l - dead) / (1 - dead), 0, 1);
+        x = (x / l) * nl;
+        y = (y / l) * nl;
+        return { x: clamp(x, -1, 1), y: clamp(y, -1, 1) };
+      };
+
       if (touchMoveId != null) {
         const dx = touchMoveNow.x - touchMoveStart.x;
         const dy = touchMoveNow.y - touchMoveStart.y;
-        joyState.mx = clamp(dx / 60, -1, 1);
-        joyState.my = clamp(dy / 60, -1, 1);
+        const s = stick(dx, dy, 70);
+        joyState.mx = s.x;
+        joyState.my = s.y;
       } else {
         joyState.mx = 0;
         joyState.my = 0;
@@ -649,8 +665,9 @@ export function Dust() {
       if (touchLookId != null) {
         const dx = touchLookNow.x - touchLookStart.x;
         const dy = touchLookNow.y - touchLookStart.y;
-        joyState.lx = clamp(dx / 70, -1, 1);
-        joyState.ly = clamp(dy / 70, -1, 1);
+        const s = stick(dx, dy, 95);
+        joyState.lx = s.x;
+        joyState.ly = s.y;
       } else {
         joyState.lx = 0;
         joyState.ly = 0;
@@ -678,25 +695,31 @@ export function Dust() {
       playerRoot.position.x += vel.x * dt;
       playerRoot.position.z += vel.z * dt;
 
-      // ground clamp (simple sample from height grid)
+      // Grounding / collision against the heightmap.
+      // We treat playerRoot.y as the *feet* height.
       {
-        const gx = ((playerRoot.position.x / TERR_W) + 0.5) * SUB;
-        const gz = ((playerRoot.position.z / TERR_H) + 0.5) * SUB;
-        const x0 = Math.max(0, Math.min(SUB, Math.floor(gx)));
-        const z0 = Math.max(0, Math.min(SUB, Math.floor(gz)));
-        const x1 = Math.max(0, Math.min(SUB, x0 + 1));
-        const z1 = Math.max(0, Math.min(SUB, z0 + 1));
-        const tx = clamp(gx - x0, 0, 1);
-        const tz = clamp(gz - z0, 0, 1);
-        const h00 = heights[z0 * (SUB + 1) + x0];
-        const h10 = heights[z0 * (SUB + 1) + x1];
-        const h01 = heights[z1 * (SUB + 1) + x0];
-        const h11 = heights[z1 * (SUB + 1) + x1];
-        const h0 = h00 + (h10 - h00) * tx;
-        const h1 = h01 + (h11 - h01) * tx;
-        const hh = h0 + (h1 - h0) * tz;
-        // Raise collider/root so visual feet don't clip.
-        playerRoot.position.y = hh + 1.55;
+        const sampleHeight = (x: number, z: number) => {
+          const gx = ((x / TERR_W) + 0.5) * SUB;
+          const gz = ((z / TERR_H) + 0.5) * SUB;
+          const x0 = Math.max(0, Math.min(SUB, Math.floor(gx)));
+          const z0 = Math.max(0, Math.min(SUB, Math.floor(gz)));
+          const x1 = Math.max(0, Math.min(SUB, x0 + 1));
+          const z1 = Math.max(0, Math.min(SUB, z0 + 1));
+          const tx = clamp(gx - x0, 0, 1);
+          const tz = clamp(gz - z0, 0, 1);
+          const h00 = heights[z0 * (SUB + 1) + x0];
+          const h10 = heights[z0 * (SUB + 1) + x1];
+          const h01 = heights[z1 * (SUB + 1) + x0];
+          const h11 = heights[z1 * (SUB + 1) + x1];
+          const h0 = h00 + (h10 - h00) * tx;
+          const h1 = h01 + (h11 - h01) * tx;
+          return h0 + (h1 - h0) * tz;
+        };
+
+        const h = sampleHeight(playerRoot.position.x, playerRoot.position.z);
+        const targetY = h + 0.02; // tiny lift to prevent z-fighting / sinking
+        // Smooth snap so it feels grounded but not jittery
+        playerRoot.position.y += (targetY - playerRoot.position.y) * clamp(24 * dt, 0, 1);
       }
 
       // face movement direction
