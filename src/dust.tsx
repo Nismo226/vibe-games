@@ -642,6 +642,9 @@ export function Dust() {
     // Main loop (character controller)
     let yaw = 0;
     const vel = new Vector3(0, 0, 0);
+    let vy = 0; // vertical velocity
+    let grounded = false;
+    let lastGroundH = 0;
 
     let dbgAccum = 0;
 
@@ -698,8 +701,8 @@ export function Dust() {
       const desired = right.scale(input.moveX).add(fwd.scale(input.moveY));
       const sp = input.alt ? 8.5 : 5.5;
 
-      // smooth
-      const accel = 18;
+      // smooth (snappier so it feels like a real controller)
+      const accel = desired.length() > 0.001 ? 34 : 26;
       vel.x += (desired.x * sp - vel.x) * clamp(accel * dt, 0, 1);
       vel.z += (desired.z * sp - vel.z) * clamp(accel * dt, 0, 1);
 
@@ -727,9 +730,32 @@ export function Dust() {
           return h0 + (h1 - h0) * tz;
         };
 
+        const eps = 0.04;
+        const g = -28; // gravity
+
         const h = sampleHeight(playerRoot.position.x, playerRoot.position.z);
-        // hard snap so the feet never hover/sink; we can add smoothing later once capsule collision exists
-        playerRoot.position.y = h + 0.02;
+        lastGroundH = h;
+
+        // integrate vertical
+        const floorY = h + eps;
+        if (playerRoot.position.y > floorY + 0.001) {
+          grounded = false;
+          vy += g * dt;
+          vy = Math.max(vy, -60);
+          playerRoot.position.y += vy * dt;
+        }
+
+        // collide with ground
+        if (playerRoot.position.y <= floorY) {
+          playerRoot.position.y = floorY;
+          vy = 0;
+          grounded = true;
+        }
+
+        // If we're basically on the floor, keep it stable.
+        if (Math.abs(playerRoot.position.y - floorY) < 0.002) {
+          playerRoot.position.y = floorY;
+        }
       }
 
       // face movement direction
@@ -798,7 +824,7 @@ export function Dust() {
         const wt = walkAG?.targetedAnimations?.length ?? 0;
         const rt = runAG?.targetedAnimations?.length ?? 0;
         const bones = rigSkeleton?.bones?.length ?? 0;
-        debugRef.current.textContent = `anim=${anim} intent=${intent.toFixed(2)} speed=${sp2.toFixed(2)} mx=${input.moveX.toFixed(2)} my=${input.moveY.toFixed(2)} bones=${bones} walkT=${wt} runT=${rt} gpAxes=${ax}`;
+        debugRef.current.textContent = `anim=${anim} intent=${intent.toFixed(2)} speed=${sp2.toFixed(2)} mx=${input.moveX.toFixed(2)} my=${input.moveY.toFixed(2)} grounded=${grounded ? 1 : 0} y=${playerRoot.position.y.toFixed(2)} gh=${lastGroundH.toFixed(2)} bones=${bones} walkT=${wt} runT=${rt} gpAxes=${ax}`;
       }
 
       // terrain sculpt while holding input
