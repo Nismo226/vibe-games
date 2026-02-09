@@ -358,6 +358,21 @@ export function Dust() {
       }
     };
 
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/^mixamorig[:_\-]*/g, "")
+        .replace(/[^a-z0-9]+/g, "");
+
+    const findBone = (name: string) => {
+      const sk = rigSkeleton;
+      if (!sk) return null;
+      const direct = sk.bones.find((b) => b.name === name);
+      if (direct) return direct;
+      const nn = norm(name);
+      return sk.bones.find((b) => norm(b.name) === nn) ?? null;
+    };
+
     const retargetGroupToRig = (src: AnimationGroup): AnimationGroup => {
       // Clone the animation group and remap its targets (bones/nodes) to our rig.
       return src.clone(`${src.name}_rt`, (oldTarget: any) => {
@@ -365,8 +380,7 @@ export function Dust() {
 
         // Bone target
         if (oldTarget instanceof Bone) {
-          const name = oldTarget.name;
-          return rigSkeleton?.bones.find((b) => b.name === name) ?? null;
+          return findBone(oldTarget.name);
         }
 
         // TransformNode/Mesh target
@@ -571,6 +585,16 @@ export function Dust() {
           if (!moving) {
             // Stop everything every frame to prevent “stuck started” states.
             stopAllCharacterAnims();
+
+            // If we have a walk clip, force the rig into frame-0 pose (better than T-pose).
+            if (walkAG && walkAG.targetedAnimations.length > 0) {
+              try {
+                walkAG.start(false, 1.0);
+                walkAG.goToFrame(0);
+                walkAG.pause();
+              } catch {}
+            }
+
             anim = "idle";
           } else if (running) {
             // ensure no other animations are competing
@@ -604,7 +628,10 @@ export function Dust() {
         const intent = Math.hypot(input.moveX, input.moveY);
         const sp2 = Math.hypot(vel.x, vel.z);
         const ax = input.gp?.axes?.slice(0, 4).map((v) => (Math.round(v * 1000) / 1000).toFixed(3)).join(",") ?? "-";
-        debugRef.current.textContent = `anim=${anim} intent=${intent.toFixed(2)} speed=${sp2.toFixed(2)} mx=${input.moveX.toFixed(2)} my=${input.moveY.toFixed(2)} gpAxes=${ax}`;
+        const wt = walkAG?.targetedAnimations?.length ?? 0;
+        const rt = runAG?.targetedAnimations?.length ?? 0;
+        const bones = rigSkeleton?.bones?.length ?? 0;
+        debugRef.current.textContent = `anim=${anim} intent=${intent.toFixed(2)} speed=${sp2.toFixed(2)} mx=${input.moveX.toFixed(2)} my=${input.moveY.toFixed(2)} bones=${bones} walkT=${wt} runT=${rt} gpAxes=${ax}`;
       }
 
       // terrain sculpt while holding input
