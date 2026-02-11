@@ -1223,10 +1223,15 @@ export const Dust = () => {
       const sandMoisture = clamp01(humidity * 0.56 + waveVisualIntensity * 0.4);
       const waterDepthTone = clamp01(0.24 + humidity * 0.32 + waveVisualIntensity * 0.36 + stormMood * 0.12);
       const uiGlassClarity = clamp01(0.58 + uiCalm * 0.26 - waveVisualIntensity * 0.16);
+      const screenDustDepth = clamp01(0.28 + volumetricDust * 0.6 + humidity * 0.16);
+      const rimLightStrength = clamp01(0.18 + (1 - stormMood) * 0.46 + sunsetWarmth * 0.2);
+      const waterBloomPulse = clamp01(0.26 + waterSurfaceEnergy * 0.54 + waveVisualIntensity * 0.24);
+      const hudOpacityScale = clamp01(0.86 + uiQuietness * 0.12);
+      const cinematicDolly = 1 + Math.sin(now * 0.00031 + velocityEnergy * 0.9) * (0.0016 + cameraPresentation * 0.0018);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
-      ctx.scale(presentationZoom, presentationZoom);
+      ctx.scale(presentationZoom * cinematicDolly, presentationZoom * cinematicDolly);
       const cinematicRoll =
         cameraTilt * 0.0019 +
         Math.sin(now * 0.0007) * (0.0015 + waveVisualIntensity * 0.0022) +
@@ -1364,6 +1369,13 @@ export const Dust = () => {
       volumetricVeil.addColorStop(0.55, `rgba(${atmosphereTint.r - 22}, ${atmosphereTint.g - 18}, ${atmosphereTint.b - 12}, ${0.012 + volumetricDust * 0.025})`);
       volumetricVeil.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = volumetricVeil;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const dustLayer = ctx.createLinearGradient(0, canvasEl.height * 0.18, 0, canvasEl.height * 0.94);
+      dustLayer.addColorStop(0, `rgba(240, 210, 162, ${0.01 + screenDustDepth * 0.02})`);
+      dustLayer.addColorStop(0.55, `rgba(210, 176, 130, ${0.016 + screenDustDepth * 0.03})`);
+      dustLayer.addColorStop(1, `rgba(52, 68, 92, ${0.02 + humidity * 0.03 + waveVisualIntensity * 0.02})`);
+      ctx.fillStyle = dustLayer;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       ctx.fillStyle = `rgba(236, 206, 154, ${0.012 + (1 - stormMood) * 0.02})`;
@@ -1544,6 +1556,15 @@ export const Dust = () => {
               ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
             }
 
+            const rimMask = (topAir ? 0.7 : 0) + (leftAir ? 0.35 : 0) + (rightAir ? 0.24 : 0);
+            if (rimMask > 0.08) {
+              const rim = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+              rim.addColorStop(0, `rgba(255, 236, 188, ${0.015 + rimLightStrength * 0.05 * rimMask})`);
+              rim.addColorStop(1, `rgba(110, 78, 42, ${0.02 + (1 - rimLightStrength) * 0.03})`);
+              ctx.fillStyle = rim;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
+
             const contourLight = Math.max(0, lightDirX * (leftAir ? -1 : 0) + lightDirY * (topAir ? -1 : 0));
             if (contourLight > 0.05) {
               ctx.fillStyle = `rgba(255, 232, 178, ${0.05 + contourLight * 0.14})`;
@@ -1706,7 +1727,7 @@ export const Dust = () => {
             }
 
             if (topAir) {
-              const foamBase = 0.48 + waterSurfaceEnergy * 0.36;
+              const foamBase = 0.42 + waterSurfaceEnergy * 0.32 + waterBloomPulse * 0.18;
               ctx.fillStyle = `rgba(236,252,255,${foamBase})`;
               ctx.fillRect(sx, sy, CELL, 2);
               ctx.fillStyle = `rgba(210,244,255,${0.16 + waterSurfaceEnergy * 0.2})`;
@@ -2445,11 +2466,11 @@ export const Dust = () => {
       const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.1 + uiFrost * 0.06 + uiGlassClarity * 0.03})`);
-      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.05 + uiFrost * 0.04 + uiGlassClarity * 0.02})`);
-      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.01 + uiFrost * 0.03 + uiGlassClarity * 0.015})`);
+      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${(uiGlassAlpha + 0.1 + uiFrost * 0.06 + uiGlassClarity * 0.03) * hudOpacityScale})`);
+      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${(uiGlassAlpha + 0.05 + uiFrost * 0.04 + uiGlassClarity * 0.02) * hudOpacityScale})`);
+      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${(uiGlassAlpha + 0.01 + uiFrost * 0.03 + uiGlassClarity * 0.015) * hudOpacityScale})`);
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
-      hudGlow.addColorStop(0, `rgba(146, 210, 255, ${0.08 + uiHighlight * 0.12})`);
+      hudGlow.addColorStop(0, `rgba(146, 210, 255, ${(0.06 + uiHighlight * 0.1) * hudOpacityScale})`);
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
       ctx.fillStyle = `rgba(0,0,0,${0.1 + (1 - uiQuietness) * 0.08})`;
       ctx.fillRect(18, 18, hudW, hudH);
@@ -2677,6 +2698,13 @@ export const Dust = () => {
       edgeSoften.addColorStop(0, "rgba(0,0,0,0)");
       edgeSoften.addColorStop(1, `rgba(8, 14, 24, ${0.09 + humidity * 0.06})`);
       ctx.fillStyle = edgeSoften;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const wetDistortion = ctx.createLinearGradient(0, 0, canvasEl.width, canvasEl.height);
+      wetDistortion.addColorStop(0, `rgba(186, 224, 255, ${0.008 + wetLens * 0.02 + waterBloomPulse * 0.01})`);
+      wetDistortion.addColorStop(0.5, `rgba(124, 180, 236, ${0.008 + wetLens * 0.016})`);
+      wetDistortion.addColorStop(1, `rgba(82, 132, 192, ${0.006 + wetLens * 0.014})`);
+      ctx.fillStyle = wetDistortion;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // very subtle edge chromatic separation for lens character
