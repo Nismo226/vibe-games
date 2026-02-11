@@ -12,6 +12,7 @@ type Player = {
   onGround: boolean;
   coyoteTimer: number;
   jumpBufferTimer: number;
+  prevWaterSubmerge: number;
 };
 
 type QuestState = "explore" | "dialog" | "countdown" | "wave" | "success" | "fail";
@@ -91,6 +92,7 @@ export const Dust = () => {
     onGround: false,
     coyoteTimer: 0,
     jumpBufferTimer: 0,
+    prevWaterSubmerge: 0,
   });
   const tribeRef = useRef({ x: (GRID_W - 14) * CELL, y: 30 * CELL, w: 12, h: 18 });
   const questRef = useRef<{
@@ -136,6 +138,7 @@ export const Dust = () => {
     blobX: 0,
     blobY: 0,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; life: number; size: number }>,
+    waterFx: [] as Array<{ x: number; y: number; vx: number; vy: number; life: number; size: number }>,
     falling: [] as Array<{ x: number; y: number; vy: number }>,
   });
 
@@ -176,6 +179,7 @@ export const Dust = () => {
       player.vx = 0;
       player.vy = 0;
       player.onGround = false;
+      player.prevWaterSubmerge = 0;
 
       const quest = questRef.current;
       quest.state = "explore";
@@ -188,6 +192,7 @@ export const Dust = () => {
       const tool = toolRef.current;
       tool.falling.length = 0;
       tool.particles.length = 0;
+      tool.waterFx.length = 0;
       tool.blobSize = 0;
       tool.carrySize = 0;
 
@@ -595,6 +600,24 @@ export const Dust = () => {
       return best;
     }
 
+    function spawnWaterSplash(x: number, y: number, intensity: number) {
+      const tool = toolRef.current;
+      const count = Math.max(4, Math.min(22, Math.floor(5 + intensity * 14)));
+      for (let i = 0; i < count; i++) {
+        const a = -Math.PI * (0.1 + Math.random() * 0.8);
+        const speed = 36 + intensity * 120 + Math.random() * 80;
+        tool.waterFx.push({
+          x: x + (Math.random() - 0.5) * 10,
+          y: y + (Math.random() - 0.5) * 4,
+          vx: Math.cos(a) * speed * (Math.random() < 0.5 ? -1 : 1) * 0.5,
+          vy: Math.sin(a) * speed,
+          life: 0.24 + Math.random() * 0.32,
+          size: 1.2 + Math.random() * 2.2,
+        });
+      }
+      if (tool.waterFx.length > 220) tool.waterFx.splice(0, tool.waterFx.length - 220);
+    }
+
     function applyTools(camX: number, camY: number, dt: number) {
       const mx = mouseRef.current.x + camX;
       const my = mouseRef.current.y + camY;
@@ -618,6 +641,17 @@ export const Dust = () => {
         p.vy *= 0.95;
         p.life -= dt;
         if (p.life <= 0) tool.particles.splice(i, 1);
+      }
+
+      for (let i = tool.waterFx.length - 1; i >= 0; i--) {
+        const p = tool.waterFx[i];
+        p.vy += 620 * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.94;
+        p.vy *= 0.96;
+        p.life -= dt;
+        if (p.life <= 0) tool.waterFx.splice(i, 1);
       }
 
       const pCenterX = player.x + player.w * 0.5;
@@ -724,6 +758,13 @@ export const Dust = () => {
 
       const waterSubmerge = playerWaterSubmergeRatio(player.x, player.y, player.w, player.h);
       const inWater = waterSubmerge > 0;
+      const crossedIntoWater = player.prevWaterSubmerge <= 0.06 && waterSubmerge > 0.18;
+      const crossedOutWater = player.prevWaterSubmerge > 0.18 && waterSubmerge <= 0.06;
+
+      if ((crossedIntoWater || crossedOutWater) && Math.abs(player.vy) > 120) {
+        const impact = Math.min(1, Math.abs(player.vy) / 520 + waterSubmerge * 0.6);
+        spawnWaterSplash(player.x + player.w * 0.5, player.y + player.h * (crossedIntoWater ? 0.9 : 0.25), impact);
+      }
 
       // gravity + water buoyancy/drag polish
       player.vy += GRAVITY * dt;
@@ -909,6 +950,7 @@ export const Dust = () => {
       // clamp in world
       player.x = Math.max(0, Math.min(player.x, GRID_W * CELL - player.w));
       player.y = Math.max(0, Math.min(player.y, GRID_H * CELL - player.h));
+      player.prevWaterSubmerge = waterSubmerge;
 
       const tool = toolRef.current;
       for (let i = tool.falling.length - 1; i >= 0; i--) {
@@ -928,7 +970,11 @@ export const Dust = () => {
         const belowY = cy + 1;
         const blockedBelow = belowY >= GRID_H || getCell(cx, belowY) !== 0;
         if (blockedBelow) {
-          if (getCell(cx, cy) === 0) {
+          const landedCell = getCell(cx, cy);
+          if (landedCell === 0 || landedCell === 3) {
+            if (landedCell === 3) {
+              spawnWaterSplash(f.x, f.y, Math.min(1, 0.35 + Math.abs(f.vy) / 780));
+            }
             setCell(cx, cy, 1);
           } else {
             // try to stack to side if occupied
@@ -1308,6 +1354,17 @@ export const Dust = () => {
         for (const p of tool.particles) {
           const alpha = Math.max(0, Math.min(1, p.life * 3.2));
           ctx.fillStyle = `rgba(191, 151, 98, ${0.2 + alpha * 0.45})`;
+          ctx.beginPath();
+          ctx.arc(p.x - camX, p.y - camY, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // water splash particles (player entries/exits + dirt impacts)
+      if (tool.waterFx.length) {
+        for (const p of tool.waterFx) {
+          const alpha = Math.max(0, Math.min(1, p.life * 3.6));
+          ctx.fillStyle = `rgba(210, 241, 255, ${0.14 + alpha * 0.58})`;
           ctx.beginPath();
           ctx.arc(p.x - camX, p.y - camY, p.size, 0, Math.PI * 2);
           ctx.fill();
