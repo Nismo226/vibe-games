@@ -1149,6 +1149,9 @@ export const Dust = () => {
       const velocityEnergy = Math.min(1, Math.hypot(player.vx, player.vy) / 460);
       const cinematicFocus = clamp01(0.3 + velocityEnergy * 0.55 + waveVisualIntensity * 0.4);
       const colorBleach = clamp01(0.08 + humidity * 0.16 + waveVisualIntensity * 0.2);
+      const filmGrainAmount = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.006;
+      const uiGlassAlpha = 0.2 + uiCalm * 0.16;
+      const horizonGlow = 0.05 + (1 - stormMood) * 0.08;
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1166,9 +1169,9 @@ export const Dust = () => {
       // background
       const dayToStorm = Math.min(1, stormMood * 0.9 + waveVisualIntensity * 0.5);
       const heatHueShift = Math.sin(now * 0.00017) * 0.5 + 0.5;
-      const skyTop = `rgba(${12 + Math.floor(dayToStorm * 18)}, ${26 + Math.floor(dayToStorm * 16)}, ${52 + Math.floor(dayToStorm * 24)}, 1)`;
-      const skyMid = `rgba(${28 + Math.floor(dayToStorm * 14 + sunsetWarmth * 9)}, ${62 + Math.floor(dayToStorm * 14 + sunsetWarmth * 6)}, ${98 + Math.floor(dayToStorm * 16)}, 1)`;
-      const skyBottom = `rgba(${44 + Math.floor(dayToStorm * 16 + heatHueShift * 7 + sunsetWarmth * 12)}, ${84 + Math.floor(dayToStorm * 11 + heatHueShift * 5)}, ${92 + Math.floor(dayToStorm * 11)}, 1)`;
+      const skyTop = `rgba(${10 + Math.floor(dayToStorm * 16)}, ${24 + Math.floor(dayToStorm * 14)}, ${54 + Math.floor(dayToStorm * 24)}, 1)`;
+      const skyMid = `rgba(${30 + Math.floor(dayToStorm * 12 + sunsetWarmth * 11)}, ${70 + Math.floor(dayToStorm * 10 + sunsetWarmth * 8)}, ${112 + Math.floor(dayToStorm * 14)}, 1)`;
+      const skyBottom = `rgba(${56 + Math.floor(dayToStorm * 12 + heatHueShift * 8 + sunsetWarmth * 16)}, ${96 + Math.floor(dayToStorm * 8 + heatHueShift * 6)}, ${104 + Math.floor(dayToStorm * 10)}, 1)`;
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       bg.addColorStop(0, skyTop);
       bg.addColorStop(0.52, skyMid);
@@ -1181,6 +1184,13 @@ export const Dust = () => {
       exposureWash.addColorStop(0.6, "rgba(255, 238, 204, 0)");
       exposureWash.addColorStop(1, `rgba(10, 16, 28, ${0.04 + (1 - cinematicExposure) * 0.08})`);
       ctx.fillStyle = exposureWash;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const horizonBand = ctx.createLinearGradient(0, canvasEl.height * 0.28, 0, canvasEl.height * 0.82);
+      horizonBand.addColorStop(0, "rgba(255, 224, 172, 0)");
+      horizonBand.addColorStop(0.52, `rgba(255, 210, 150, ${horizonGlow})`);
+      horizonBand.addColorStop(1, "rgba(255, 198, 132, 0)");
+      ctx.fillStyle = horizonBand;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // solar disc + upper-atmosphere cloud wisps
@@ -1277,7 +1287,8 @@ export const Dust = () => {
             const duneBand = Math.sin(y * 0.9 + x * 0.18 + now * 0.0008) * 0.5 + 0.5;
             const coolShadow = Math.floor(8 + (1 - duneBand) * 10);
             const warmSand = Math.floor(18 + sunsetWarmth * 22);
-            ctx.fillStyle = `rgb(${Math.floor((base + 30 + Math.floor(duneWave * 6) + warmSand) * microContrast)}, ${Math.floor((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55) * microContrast)}, ${Math.floor((base - 20 - coolShadow) * microContrast)})`;
+            const mineralTint = Math.floor((hash2(x * 7 + 5, y * 7 + 13) - 0.5) * 10);
+            ctx.fillStyle = `rgb(${Math.floor((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint) * microContrast)}, ${Math.floor((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5) * microContrast)}, ${Math.floor((base - 20 - coolShadow + mineralTint * 0.3) * microContrast)})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const windSheen = Math.sin(now * 0.0018 + x * 0.92 - y * 0.34) * 0.5 + 0.5;
@@ -1419,7 +1430,8 @@ export const Dust = () => {
             const wavelet = Math.sin(now * 0.003 + x * 0.7 - y * 0.28) * 0.5 + 0.5;
             const depthTint = localDepth * 5;
             const cyanLift = Math.floor((1 - stormMood) * 12 + sunsetWarmth * 6);
-            ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70) - depthTint + cyanLift}, ${226 + Math.floor(wn * 24) - Math.floor(localDepth * 2.8)}, ${0.84 + wavelet * 0.1})`;
+            const coastalGreen = Math.floor(6 + (1 - stormMood) * 8 + Math.max(0, 2 - localDepth) * 2);
+            ctx.fillStyle = `rgba(${22 + Math.floor(wn * 16)}, ${deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen}, ${228 + Math.floor(wn * 26) - Math.floor(localDepth * 3)}, ${0.84 + wavelet * 0.1})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const sedimentMix =
@@ -2073,13 +2085,13 @@ export const Dust = () => {
       const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, `rgba(10, 20, 34, ${0.28 + uiCalm * 0.12})`);
-      hudGrad.addColorStop(0.45, `rgba(8, 16, 28, ${0.24 + uiCalm * 0.1})`);
-      hudGrad.addColorStop(1, `rgba(6, 12, 22, ${0.2 + uiCalm * 0.1})`);
+      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.14})`);
+      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.08})`);
+      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.04})`);
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
-      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.11)");
+      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.14)");
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
-      ctx.fillStyle = "rgba(0,0,0,0.12)";
+      ctx.fillStyle = "rgba(0,0,0,0.14)";
       ctx.fillRect(18, 18, hudW, hudH);
       ctx.fillStyle = hudGrad;
       ctx.fillRect(14, 14, hudW, hudH);
@@ -2151,8 +2163,9 @@ export const Dust = () => {
 
       if (!compactHud) {
         const objectiveY = 92;
-        ctx.fillStyle = "#d8eeff";
+        ctx.fillStyle = "rgba(216, 238, 255, 0.94)";
         ctx.fillText(objective, 28, objectiveY);
+        ctx.fillStyle = "rgba(198, 224, 248, 0.82)";
         ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, objectiveY + 22);
       }
 
@@ -2264,7 +2277,7 @@ export const Dust = () => {
 
       // subtle film grain + chroma jitter
       const t = performance.now() * 0.001;
-      ctx.fillStyle = `rgba(255,255,255,${0.014 + Math.sin(t * 2.7) * 0.003 + humidity * 0.004})`;
+      ctx.fillStyle = `rgba(255,255,255,${filmGrainAmount + Math.sin(t * 2.7) * 0.003})`;
       for (let i = 0; i < 130; i++) {
         const gx = ((i * 73.13 + t * 97) % canvasEl.width + canvasEl.width) % canvasEl.width;
         const gy = ((i * 51.77 + t * 61) % canvasEl.height + canvasEl.height) % canvasEl.height;
