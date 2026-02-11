@@ -26,8 +26,9 @@ const JUMP_VEL = -460;
 const COYOTE_TIME = 0.11;
 const JUMP_BUFFER_TIME = 0.12;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.5";
+const GAME_VERSION = "v0.1.6";
 const BARRIER_GOAL = 16;
+const STEP_HEIGHT = 10;
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -839,14 +840,30 @@ export const Dust = () => {
       if (player.vy > 900) player.vy = 900;
       if (inWater && player.vy < -260) player.vy = -260;
 
-      // move X
+      // move X (with low step-up assist so movement feels less snaggy on 1-tile lips)
       let nextX = player.x + player.vx * dt;
       if (collidesRect(nextX, player.y, player.w, player.h)) {
-        const step = Math.sign(player.vx);
-        while (!collidesRect(player.x + step, player.y, player.w, player.h)) {
-          player.x += step;
+        const stepDir = Math.sign(player.vx);
+        let stepped = false;
+
+        // only step when moving horizontally with intent and not deeply submerged
+        if (stepDir !== 0 && (player.onGround || player.coyoteTimer > 0.02) && waterSubmerge < 0.2) {
+          for (let up = 2; up <= STEP_HEIGHT; up += 2) {
+            if (!collidesRect(player.x, player.y - up, player.w, player.h) && !collidesRect(nextX, player.y - up, player.w, player.h)) {
+              player.y -= up;
+              player.x = nextX;
+              stepped = true;
+              break;
+            }
+          }
         }
-        player.vx = 0;
+
+        if (!stepped) {
+          while (!collidesRect(player.x + stepDir, player.y, player.w, player.h)) {
+            player.x += stepDir;
+          }
+          player.vx = 0;
+        }
       } else {
         player.x = nextX;
       }
