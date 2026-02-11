@@ -269,12 +269,16 @@ export const Dust = () => {
       const toggleW = 132;
       const toggleH = 44;
       const toggleX = canvasEl.width - toggleW - 16;
-      const toggleY = canvasEl.height - toggleH - 16;
+      const toggleY = canvasEl.height - toggleH - 52;
       const onToggle = e.clientX >= toggleX && e.clientX <= toggleX + toggleW && e.clientY >= toggleY && e.clientY <= toggleY + toggleH;
 
       if (onToggle) {
         const mobile = mobileRef.current;
         mobile.toolToggle = mobile.toolToggle === "suck" ? "drop" : "suck";
+        mobile.toolId = -1;
+        mobile.toolMode = "none";
+        mobile.moveId = -1;
+        mobile.moveAxisX = 0;
         mouseRef.current.left = false;
         mouseRef.current.right = false;
         if (e.pointerType !== "mouse") e.preventDefault();
@@ -1001,7 +1005,7 @@ export const Dust = () => {
       const toggleW = 132;
       const toggleH = 44;
       const toggleX = canvasEl.width - toggleW - 16;
-      const toggleY = canvasEl.height - toggleH - 16;
+      const toggleY = canvasEl.height - toggleH - 52;
 
       ctx.fillStyle = "rgba(9,17,30,0.82)";
       ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
