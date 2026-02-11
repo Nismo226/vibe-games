@@ -47,6 +47,11 @@ function hash2(x: number, y: number) {
   return h - Math.floor(h);
 }
 
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0 || 1)));
+  return t * t * (3 - 2 * t);
+}
+
 function generateWorld(): Uint8Array {
   const g = new Uint8Array(GRID_W * GRID_H);
 
@@ -1219,8 +1224,16 @@ export const Dust = () => {
 
             const base = 90 + Math.floor(n * 24);
             const duneWave = Math.sin((x + y * 0.35) * 0.65 + now * 0.0014) * 0.5 + 0.5;
-            ctx.fillStyle = `rgb(${base + 30 + Math.floor(duneWave * 6)}, ${base + 12 + Math.floor(duneWave * 4)}, ${base - 20})`;
+            const duneBand = Math.sin(y * 0.9 + x * 0.18 + now * 0.0008) * 0.5 + 0.5;
+            const coolShadow = Math.floor(8 + (1 - duneBand) * 10);
+            ctx.fillStyle = `rgb(${base + 30 + Math.floor(duneWave * 6)}, ${base + 12 + Math.floor(duneWave * 4)}, ${base - 20 - coolShadow})`;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const grainHi = hash2(x * 2 + Math.floor(now * 0.0009), y * 2 + 17);
+            if (grainHi > 0.57) {
+              ctx.fillStyle = `rgba(255, 232, 174, ${0.08 + (grainHi - 0.57) * 0.2})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
+            }
 
             const warmLight = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
             warmLight.addColorStop(0, "rgba(248, 220, 164, 0.16)");
@@ -1288,6 +1301,12 @@ export const Dust = () => {
               ctx.fillStyle = "rgba(40, 26, 14, 0.2)";
               ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
             }
+
+            const cavityShadow = smoothstep(0, 1, (topAir ? 0 : 0.5) + (leftAir ? 0 : 0.35) + (rightAir ? 0 : 0.35));
+            if (cavityShadow > 0.15) {
+              ctx.fillStyle = `rgba(26, 16, 9, ${0.05 + cavityShadow * 0.1})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+            }
           } else if (c === 3) {
             const t = performance.now() * 0.003;
             const wn = hash2(x + Math.floor(t * 11), y + Math.floor(t * 7));
@@ -1298,7 +1317,15 @@ export const Dust = () => {
             const depthBoost = belowWater ? 0.14 : 0;
 
             const deep = 122 + Math.floor(wn * 24);
-            ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70)}, ${222 + Math.floor(wn * 26)}, 0.92)`;
+            const wavelet = Math.sin(now * 0.003 + x * 0.7 - y * 0.28) * 0.5 + 0.5;
+            ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70)}, ${222 + Math.floor(wn * 26)}, ${0.88 + wavelet * 0.08})`;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
+            const refractionBand = ctx.createLinearGradient(sx, sy, sx + CELL, sy);
+            refractionBand.addColorStop(0, "rgba(190, 238, 255, 0.06)");
+            refractionBand.addColorStop(0.5, `rgba(150, 214, 255, ${0.04 + wavelet * 0.08})`);
+            refractionBand.addColorStop(1, "rgba(28, 86, 158, 0.08)");
+            ctx.fillStyle = refractionBand;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const inner = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
@@ -1826,12 +1853,7 @@ export const Dust = () => {
       const visRows = Math.floor(canvasEl.height / CELL);
       const visSquares = visCols * visRows;
       const compactHud = mouseRef.current.left || mouseRef.current.right || mobileRef.current.moveId !== -1;
-      const barrierStrength = tribeBarrierStrength();
-      const barrierRatio = Math.max(0, Math.min(1, barrierStrength / BARRIER_GOAL));
       const barrierActive = questHud.state === "countdown" || questHud.state === "wave";
-      const countdownProgress = questHud.state === "countdown" ? Math.max(0, Math.min(1, 1 - questHud.timer / 90)) : questHud.state === "wave" ? 1 : 0;
-      const expectedBarrier = Math.floor(BARRIER_GOAL * (0.2 + countdownProgress * 0.75));
-      const urgencyGap = barrierActive ? Math.max(0, expectedBarrier - barrierStrength) : 0;
 
       const hudH = compactHud ? 56 : 94;
       const hudW = Math.min(690, canvasEl.width - 32);
@@ -1870,52 +1892,24 @@ export const Dust = () => {
       }
 
       if (barrierActive || questHud.state === "success" || questHud.state === "fail") {
-        const barW = 210;
-        const barX = 14 + hudW - barW - 16;
-        const barY = 38;
-        const barH = 12;
-        const fillW = Math.round(barW * barrierRatio);
-        const pulse = urgencyGap > 0 ? 0.55 + Math.sin(performance.now() * 0.012) * 0.45 : 0.25;
+        const chipW = 196;
+        const chipH = 24;
+        const chipX = 14 + hudW - chipW - 16;
+        const chipY = 34;
+        const pulse = 0.45 + Math.sin(performance.now() * 0.006) * 0.25;
 
-        ctx.fillStyle = "rgba(8,14,24,0.85)";
-        ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-        ctx.fillStyle = "rgba(165,205,240,0.18)";
-        ctx.fillRect(barX, barY, barW, barH);
-        const barGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
-        barGrad.addColorStop(0, urgencyGap > 0 ? "rgba(243,132,112,0.9)" : "rgba(117,219,174,0.85)");
-        barGrad.addColorStop(1, urgencyGap > 0 ? "rgba(255,191,149,0.92)" : "rgba(85,186,255,0.9)");
-        ctx.fillStyle = barGrad;
-        ctx.fillRect(barX, barY, fillW, barH);
-        ctx.strokeStyle = `rgba(206,232,255,${0.45 + pulse * 0.35})`;
-        ctx.strokeRect(barX - 0.5, barY - 0.5, barW + 1, barH + 1);
+        const chipGrad = ctx.createLinearGradient(chipX, chipY, chipX, chipY + chipH);
+        chipGrad.addColorStop(0, "rgba(18, 38, 62, 0.72)");
+        chipGrad.addColorStop(1, "rgba(10, 24, 42, 0.72)");
+        ctx.fillStyle = chipGrad;
+        ctx.fillRect(chipX, chipY, chipW, chipH);
+        ctx.strokeStyle = `rgba(178, 220, 255, ${0.36 + pulse * 0.24})`;
+        ctx.strokeRect(chipX, chipY, chipW, chipH);
 
         ctx.fillStyle = "#dff2ff";
         ctx.font = "12px system-ui";
-        ctx.fillText(`Barrier ${barrierStrength}/${BARRIER_GOAL}`, barX, barY - 6);
-
-        if (questHud.state === "countdown" || questHud.state === "wave") {
-          const tribeCellX = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
-          const frontCell = Math.max(0, Math.floor(questHud.tsunamiX / CELL));
-          const distToTribe = Math.max(0, tribeCellX - frontCell);
-          const threat = Math.max(0, Math.min(1, 1 - distToTribe / 42));
-          const tPulse = 0.5 + Math.sin(performance.now() * (0.006 + threat * 0.012)) * 0.5;
-
-          const threatX = barX;
-          const threatY = barY + 18;
-          const threatW = barW;
-          const threatH = 8;
-          ctx.fillStyle = "rgba(20, 28, 40, 0.78)";
-          ctx.fillRect(threatX, threatY, threatW, threatH);
-          ctx.fillStyle = `rgba(${Math.floor(210 + threat * 45)}, ${Math.floor(110 + (1 - threat) * 90)}, 92, ${0.4 + threat * 0.45})`;
-          ctx.fillRect(threatX, threatY, Math.max(2, threatW * threat), threatH);
-          ctx.strokeStyle = `rgba(255, 232, 210, ${0.26 + threat * 0.5 + tPulse * 0.18})`;
-          ctx.strokeRect(threatX - 0.5, threatY - 0.5, threatW + 1, threatH + 1);
-
-          ctx.fillStyle = threat > 0.7 ? "#ffd6c7" : "#d5ebff";
-          ctx.font = "11px system-ui";
-          ctx.fillText(`Wave proximity: ${distToTribe}m`, threatX, threatY + 20);
-        }
-
+        const waveLabel = questHud.state === "wave" ? "Tsunami impact in progress" : questHud.state === "countdown" ? "Tsunami incoming" : "Round complete";
+        ctx.fillText(waveLabel, chipX + 10, chipY + 16);
       }
 
       if (!compactHud) {
