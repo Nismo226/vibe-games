@@ -26,7 +26,7 @@ const JUMP_VEL = -460;
 const COYOTE_TIME = 0.11;
 const JUMP_BUFFER_TIME = 0.12;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.9";
+const GAME_VERSION = "v0.2.0";
 const BARRIER_GOAL = 16;
 const STEP_HEIGHT = 10;
 
@@ -1191,6 +1191,9 @@ export const Dust = () => {
         g: clamp255(162 + (1 - stormMood) * 24 + sunsetWarmth * 16 + goldenHour * 8),
         b: clamp255(196 + (1 - stormMood) * 26 + polarizer * 12),
       };
+      const gradeTemp = lerp(0.92, 1.08, clamp01((1 - stormMood) * 0.7 + goldenHour * 0.3));
+      const hazeDrift = Math.sin(now * 0.00042) * 0.5 + 0.5;
+      const uiFrost = clamp01(0.2 + uiCalm * 0.3 + (1 - stormMood) * 0.15);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1229,6 +1232,13 @@ export const Dust = () => {
       exposureWash.addColorStop(0.6, "rgba(255, 238, 204, 0)");
       exposureWash.addColorStop(1, `rgba(10, 16, 28, ${0.04 + (1 - cinematicExposure) * 0.08})`);
       ctx.fillStyle = exposureWash;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const spectralLift = ctx.createLinearGradient(0, 0, canvasEl.width, canvasEl.height);
+      spectralLift.addColorStop(0, `rgba(255, 216, 170, ${0.015 + gradeTemp * 0.016})`);
+      spectralLift.addColorStop(0.52, `rgba(176, 214, 255, ${0.008 + hazeDrift * 0.015})`);
+      spectralLift.addColorStop(1, "rgba(26, 44, 84, 0)");
+      ctx.fillStyle = spectralLift;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       const horizonBand = ctx.createLinearGradient(0, canvasEl.height * 0.28, 0, canvasEl.height * 0.82);
@@ -2266,6 +2276,14 @@ export const Dust = () => {
         ctx.fillRect(Math.min(px, px + trailLen * dir), py, Math.abs(trailLen), player.h);
       }
 
+      if (playerWater > 0.18) {
+        const submergeTint = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+        submergeTint.addColorStop(0, `rgba(176, 224, 255, ${0.015 + playerWater * 0.06})`);
+        submergeTint.addColorStop(1, `rgba(34, 102, 168, ${0.04 + playerWater * 0.1})`);
+        ctx.fillStyle = submergeTint;
+        ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+      }
+
       ctx.restore();
 
       // HUD (auto-compact while actively playing/building)
@@ -2288,9 +2306,9 @@ export const Dust = () => {
       const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.12})`);
-      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.06})`);
-      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.02})`);
+      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.1 + uiFrost * 0.06})`);
+      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.05 + uiFrost * 0.04})`);
+      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.01 + uiFrost * 0.03})`);
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
       hudGlow.addColorStop(0, `rgba(146, 210, 255, ${0.08 + uiHighlight * 0.12})`);
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
