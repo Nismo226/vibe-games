@@ -31,6 +31,11 @@ function solid(c: Cell) {
   return c === 1 || c === 2;
 }
 
+function hash2(x: number, y: number) {
+  const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+}
+
 function generateWorld(): Uint8Array {
   const g = new Uint8Array(GRID_W * GRID_H);
 
@@ -168,6 +173,33 @@ export const Dust = () => {
       return getCell(x + 1, y) === 0 || getCell(x - 1, y) === 0 || getCell(x, y + 1) === 0 || getCell(x, y - 1) === 0;
     }
 
+    function findNearestDirt(targetX: number, targetY: number, reachPx: number) {
+      const center = worldToCell(targetX, targetY);
+      const maxR = Math.max(1, Math.ceil(reachPx / CELL));
+      let best: { x: number; y: number; score: number } | null = null;
+
+      for (let oy = -maxR; oy <= maxR; oy++) {
+        for (let ox = -maxR; ox <= maxR; ox++) {
+          const tx = center.x + ox;
+          const ty = center.y + oy;
+          if (!inBounds(tx, ty)) continue;
+          if (getCell(tx, ty) !== 1) continue;
+
+          const px = tx * CELL + CELL * 0.5;
+          const py = ty * CELL + CELL * 0.5;
+          const dpx = px - targetX;
+          const dpy = py - targetY;
+          const distPx = Math.hypot(dpx, dpy);
+          if (distPx > reachPx) continue;
+
+          const score = distPx + (isEdgeDirt(tx, ty) ? -4 : 0);
+          if (!best || score < best.score) best = { x: tx, y: ty, score };
+        }
+      }
+
+      return best;
+    }
+
     function applyTools(camX: number, camY: number, dt: number) {
       const mx = mouseRef.current.x + camX;
       const my = mouseRef.current.y + camY;
@@ -204,37 +236,17 @@ export const Dust = () => {
         tool.blobSize = Math.min(22, tool.blobSize + dt * 30);
 
         if (dist <= reach && tool.mineCooldown <= 0) {
-          const suckRadius = Math.max(1, Math.floor((tool.blobSize + tool.carrySize) / 7));
-          let mined = false;
-          let minedX = tc.x;
-          let minedY = tc.y;
-          let bestScore = Number.POSITIVE_INFINITY;
+          const suctionReach = reach + Math.max(0, tool.blobSize) * 0.9;
+          const pick = findNearestDirt(mx, my, suctionReach);
 
-          // select nearest valid dirt in radius for more consistent suction
-          for (let r = 0; r <= suckRadius; r++) {
-            for (let oy = -r; oy <= r; oy++) {
-              for (let ox = -r; ox <= r; ox++) {
-                const tx = tc.x + ox;
-                const ty = tc.y + oy;
-                if (!inBounds(tx, ty)) continue;
-                if (getCell(tx, ty) !== 1) continue;
-                const score = Math.hypot(ox, oy) + (isEdgeDirt(tx, ty) ? -0.25 : 0.2);
-                if (score < bestScore) {
-                  bestScore = score;
-                  mined = true;
-                  minedX = tx;
-                  minedY = ty;
-                }
-              }
-            }
-          }
-
-          if (mined) {
+          if (pick) {
+            const minedX = pick.x;
+            const minedY = pick.y;
             setCell(minedX, minedY, 0);
             setDirt((v) => v + 1);
 
             const speedBoost = (tool.blobSize + tool.carrySize) / 40;
-            tool.mineCooldown = Math.max(0.014, 0.045 - speedBoost * 0.02);
+            tool.mineCooldown = Math.max(0.014, 0.042 - speedBoost * 0.02);
             tool.blobPulse = 1;
 
             const spawnCount = 1 + Math.floor((tool.blobSize + tool.carrySize) / 10);
@@ -262,11 +274,26 @@ export const Dust = () => {
 
       if (mouseRef.current.right && tool.placeCooldown <= 0 && dist <= reach) {
         if (dirtRef.current > 0) {
-          tool.falling.push({ x: tc.x * CELL + CELL * 0.5, y: tc.y * CELL + CELL * 0.5, vy: 0 });
-          if (tool.falling.length > 220) tool.falling.splice(0, tool.falling.length - 220);
-          setDirt((v) => Math.max(0, v - 1));
-          tool.placeCooldown = 0.05;
-          tool.blobPulse = Math.max(tool.blobPulse, 0.45);
+          let spawnX = tc.x;
+          let spawnY = tc.y;
+
+          // if pointing into solid, spawn slightly above nearest open space
+          if (inBounds(spawnX, spawnY) && getCell(spawnX, spawnY) !== 0) {
+            for (let up = 1; up <= 6; up++) {
+              if (inBounds(spawnX, spawnY - up) && getCell(spawnX, spawnY - up) === 0) {
+                spawnY = spawnY - up;
+                break;
+              }
+            }
+          }
+
+          if (inBounds(spawnX, spawnY)) {
+            tool.falling.push({ x: spawnX * CELL + CELL * 0.5, y: spawnY * CELL + CELL * 0.5, vy: 0 });
+            if (tool.falling.length > 220) tool.falling.splice(0, tool.falling.length - 220);
+            setDirt((v) => Math.max(0, v - 1));
+            tool.placeCooldown = 0.05;
+            tool.blobPulse = Math.max(tool.blobPulse, 0.45);
+          }
         }
       }
     }
@@ -384,10 +411,24 @@ export const Dust = () => {
           const sx = x * CELL - camX;
           const sy = y * CELL - camY;
 
-          if (c === 1) ctx.fillStyle = "#7b5b3a";
-          else ctx.fillStyle = "#5b5f68";
+          if (c === 1) {
+            const n = hash2(x, y);
+            const base = 92 + Math.floor(n * 24);
+            ctx.fillStyle = `rgb(${base + 25}, ${base + 8}, ${base - 18})`;
+            ctx.fillRect(sx, sy, CELL, CELL);
 
-          ctx.fillRect(sx, sy, CELL, CELL);
+            // grain/sand speckle
+            ctx.fillStyle = "rgba(222, 183, 120, 0.22)";
+            if (hash2(x + 11, y + 7) > 0.35) ctx.fillRect(sx + 2, sy + 2, 2, 2);
+            if (hash2(x + 17, y + 3) > 0.45) ctx.fillRect(sx + 7, sy + 3, 2, 2);
+            if (hash2(x + 5, y + 19) > 0.4) ctx.fillRect(sx + 4, sy + 8, 2, 2);
+
+            ctx.fillStyle = "rgba(64, 44, 24, 0.2)";
+            if (hash2(x + 23, y + 29) > 0.5) ctx.fillRect(sx + 9, sy + 7, 2, 2);
+          } else {
+            ctx.fillStyle = "#5b5f68";
+            ctx.fillRect(sx, sy, CELL, CELL);
+          }
         }
       }
 
