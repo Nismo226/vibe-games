@@ -48,8 +48,9 @@ function generateWorld(): Uint8Array {
     const noise = Math.floor(Math.sin(x * 0.14) * 2 + Math.sin(x * 0.037) * 3);
     const groundY = base + noise;
 
+    const stoneStart = GRID_H - 5; // keep only bottom 5 rows as bedrock
     for (let y = groundY; y < GRID_H; y++) {
-      g[idx(x, y)] = y > groundY + 6 ? 2 : 1; // stone deeper
+      g[idx(x, y)] = y >= stoneStart ? 2 : 1;
     }
   }
 
