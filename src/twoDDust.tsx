@@ -1135,6 +1135,7 @@ export const Dust = () => {
       const sunsetWarmth = 0.32 + Math.sin(now * 0.00006) * 0.18 + (1 - stormMood) * 0.12;
       const atmosphereDensity = Math.min(1, 0.24 + humidity * 0.52 + waveVisualIntensity * 0.28);
       const microContrast = 0.92 + (1 - humidity) * 0.18;
+      const uiCalm = Math.max(0, 1 - waveVisualIntensity * 0.8 - stormMood * 0.55);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1226,6 +1227,7 @@ export const Dust = () => {
 
           const sx = x * CELL - camX;
           const sy = y * CELL - camY;
+          const depthFromHorizon = Math.max(0, Math.min(1, (sy / Math.max(1, canvasEl.height)) * 0.9 + 0.1));
 
           if (c === 1) {
             const n = hash2(x, y);
@@ -1512,6 +1514,12 @@ export const Dust = () => {
               ctx.fillRect(sx + CELL - 1, sy, 1, CELL);
             }
           }
+
+          const depthFog = depthFromHorizon * (0.03 + atmosphereDensity * 0.06);
+          if (depthFog > 0.01) {
+            ctx.fillStyle = `rgba(132, 170, 210, ${depthFog})`;
+            ctx.fillRect(sx, sy, CELL, CELL);
+          }
         }
       }
 
@@ -1602,9 +1610,9 @@ export const Dust = () => {
         ctx.fill();
         ctx.restore();
 
-        ctx.fillStyle = "rgba(8, 18, 34, 0.82)";
+        ctx.fillStyle = `rgba(8, 18, 34, ${0.62 + uiCalm * 0.2})`;
         ctx.fillRect(ix - 44, iy + 12, 88, 20);
-        ctx.strokeStyle = "rgba(170, 220, 255, 0.65)";
+        ctx.strokeStyle = `rgba(170, 220, 255, ${0.42 + uiCalm * 0.23})`;
         ctx.strokeRect(ix - 44, iy + 12, 88, 20);
         ctx.fillStyle = "#d9f1ff";
         ctx.font = "12px system-ui";
@@ -1615,6 +1623,13 @@ export const Dust = () => {
       const tx = tribe.x - camX;
       const tribeBob = Math.sin(performance.now() * 0.005) * 1.5;
       const ty = tribe.y - camY + tribeBob;
+
+      // soft contact shadows to anchor characters into the terrain
+      const tribeShadow = ctx.createRadialGradient(tx + tribe.w * 0.5, ty + tribe.h + 2, 1, tx + tribe.w * 0.5, ty + tribe.h + 2, 14);
+      tribeShadow.addColorStop(0, "rgba(6, 10, 18, 0.32)");
+      tribeShadow.addColorStop(1, "rgba(6, 10, 18, 0)");
+      ctx.fillStyle = tribeShadow;
+      ctx.fillRect(tx - 8, ty + tribe.h - 3, tribe.w + 16, 14);
 
       const beaconPulse = 0.35 + Math.sin(performance.now() * 0.004) * 0.12;
       const beacon = ctx.createLinearGradient(tribeScreenX, 0, tribeScreenX, ty + 8);
@@ -1908,6 +1923,14 @@ export const Dust = () => {
         }
       }
 
+      const playerShadowX = player.x - camX + player.w * 0.5;
+      const playerShadowY = player.y - camY + player.h + 1;
+      const playerShadow = ctx.createRadialGradient(playerShadowX, playerShadowY, 1, playerShadowX, playerShadowY, 13);
+      playerShadow.addColorStop(0, `rgba(6, 12, 20, ${0.26 + playerWater * 0.1})`);
+      playerShadow.addColorStop(1, "rgba(6, 12, 20, 0)");
+      ctx.fillStyle = playerShadow;
+      ctx.fillRect(playerShadowX - 11, playerShadowY - 4, 22, 12);
+
       ctx.fillStyle = playerWater > 0.12 ? "#bfe4ff" : "#cfe9ff";
       ctx.fillRect(player.x - camX, player.y - camY, player.w, player.h);
 
@@ -1931,9 +1954,9 @@ export const Dust = () => {
       const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.36)");
-      hudGrad.addColorStop(0.45, "rgba(8, 16, 28, 0.32)");
-      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.28)");
+      hudGrad.addColorStop(0, `rgba(10, 20, 34, ${0.28 + uiCalm * 0.12})`);
+      hudGrad.addColorStop(0.45, `rgba(8, 16, 28, ${0.24 + uiCalm * 0.1})`);
+      hudGrad.addColorStop(1, `rgba(6, 12, 22, ${0.2 + uiCalm * 0.1})`);
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
       hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.11)");
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
