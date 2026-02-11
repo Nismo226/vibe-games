@@ -21,7 +21,8 @@ const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.3";
+const GAME_VERSION = "v0.1.4";
+const BARRIER_GOAL = 16;
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -686,12 +687,12 @@ export const Dust = () => {
         }
 
         const wavePassed = frontCell >= GRID_W - 2 && quest.waveTime > 5;
-        if (tribeWet && barrier < 16) {
+        if (tribeWet && barrier < BARRIER_GOAL) {
           quest.state = "fail";
           quest.resultText = "The wave broke through. Build a bigger wall and try again.";
         } else if (wavePassed) {
           quest.state = "success";
-          quest.resultText = barrier >= 16 ? "Barrier held! The tribe is safe." : "You survived this one, but stronger walls are safer.";
+          quest.resultText = barrier >= BARRIER_GOAL ? "Barrier held! The tribe is safe." : "You survived this one, but stronger walls are safer.";
         }
       }
 
@@ -867,6 +868,9 @@ export const Dust = () => {
 
       const tribe = tribeRef.current;
       const quest = questRef.current;
+      const barrier = tribeBarrierStrength();
+      const barrierPct = Math.max(0, Math.min(1, barrier / BARRIER_GOAL));
+      const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
 
       // tribe character (first rescue target)
       const tx = tribe.x - camX;
@@ -878,6 +882,19 @@ export const Dust = () => {
       ctx.fillRect(tx + 2, ty + 6, 8, 10);
       ctx.fillStyle = "#f4e4d2";
       ctx.fillRect(tx + 4, ty + 8, 4, 2);
+
+      if (quest.state === "countdown" || quest.state === "wave") {
+        const panic = quest.state === "wave" ? 1 : Math.min(1, 1 - quest.timer / 90);
+        const bubbleW = 36;
+        const bubbleH = 20;
+        const bubbleX = tx - 12;
+        const bubbleY = ty - 28 - panic * 4;
+        ctx.fillStyle = `rgba(${Math.floor(180 + panic * 55)}, ${Math.floor(70 + panic * 40)}, ${Math.floor(62 + panic * 20)}, 0.9)`;
+        ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
+        ctx.fillStyle = "rgba(250,240,235,0.95)";
+        ctx.font = "bold 13px system-ui";
+        ctx.fillText(quest.state === "wave" ? "!!" : "!", bubbleX + 13, bubbleY + 14);
+      }
 
       if (quest.state === "explore") {
         ctx.fillStyle = "rgba(20,28,45,0.86)";
@@ -1019,9 +1036,31 @@ export const Dust = () => {
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
 
+      if (questHud.state === "countdown" || questHud.state === "wave" || questHud.state === "success" || questHud.state === "fail") {
+        const meterX = 28;
+        const meterY = compactHud ? 74 : 82;
+        const meterW = 248;
+        const meterH = 10;
+        ctx.fillStyle = "rgba(20,35,55,0.82)";
+        ctx.fillRect(meterX, meterY, meterW, meterH);
+        const fillW = Math.floor(meterW * barrierPct);
+        const meterColor = barrierPct >= 1 ? "#56d58f" : barrierPct >= 0.65 ? "#f0be67" : "#ea6d6d";
+        ctx.fillStyle = meterColor;
+        ctx.fillRect(meterX, meterY, fillW, meterH);
+        const goalX = meterX + meterW;
+        ctx.strokeStyle = "rgba(230,245,255,0.8)";
+        ctx.beginPath();
+        ctx.moveTo(goalX, meterY - 2);
+        ctx.lineTo(goalX, meterY + meterH + 2);
+        ctx.stroke();
+        ctx.fillStyle = "#d8eeff";
+        ctx.font = "12px system-ui";
+        ctx.fillText(`Barrier: ${barrier}/${BARRIER_GOAL} (${barrierLabel})`, meterX + meterW + 12, meterY + 9);
+      }
+
       if (!compactHud) {
-        ctx.fillText(objective, 28, 82);
-        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
+        ctx.fillText(objective, 28, questHud.state === "countdown" || questHud.state === "wave" || questHud.state === "success" || questHud.state === "fail" ? 100 : 82);
+        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, questHud.state === "countdown" || questHud.state === "wave" || questHud.state === "success" || questHud.state === "fail" ? 122 : 104);
       }
 
       if (questHud.state === "success" || questHud.state === "fail") {
