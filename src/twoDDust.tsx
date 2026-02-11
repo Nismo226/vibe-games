@@ -106,7 +106,7 @@ export const Dust = () => {
     timer: 90,
     dialogElapsed: 0,
     tsunamiX: -220,
-    tsunamiSpeed: 78,
+    tsunamiSpeed: 94,
     waveTime: 0,
     resultText: "",
   });
@@ -815,9 +815,21 @@ export const Dust = () => {
 
         // Physical source only at far LEFT (prevents water teleporting through sealed walls)
         const sourceCols = 3;
+        const waveY0 = Math.floor(GRID_H * 0.3);
+        const waveY1 = Math.floor(GRID_H * 0.82);
         for (let x = 0; x < sourceCols; x++) {
-          for (let y = Math.floor(GRID_H * 0.36); y < Math.floor(GRID_H * 0.82); y++) {
+          for (let y = waveY0; y < waveY1; y++) {
             if (getCell(x, y) === 0) setCell(x, y, 3);
+          }
+        }
+
+        // Advancing tsunami front: only extend into cells that have water directly to the left.
+        // This keeps the big wave visible while still respecting sealed barriers.
+        const frontCell = Math.min(GRID_W - 1, Math.floor(quest.tsunamiX / CELL));
+        for (let x = 1; x <= frontCell; x++) {
+          for (let y = waveY0; y < waveY1; y++) {
+            if (getCell(x, y) !== 0) continue;
+            if (getCell(x - 1, y) === 3) setCell(x, y, 3);
           }
         }
 
@@ -869,8 +881,6 @@ export const Dust = () => {
             }
           }
         }
-
-        const frontCell = Math.min(GRID_W - 1, Math.floor(quest.tsunamiX / CELL));
 
         const barrier = tribeBarrierStrength();
         const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
