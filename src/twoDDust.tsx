@@ -619,7 +619,8 @@ export const Dust = () => {
         // Inject a real blocky water front from LEFT
         const frontCell = Math.min(GRID_W - 1, Math.floor(quest.tsunamiX / CELL));
         for (let x = 0; x <= frontCell; x++) {
-          for (let y = 4; y < Math.floor(GRID_H * 0.74); y++) {
+          // keep tsunami lower so player can reasonably build against it
+          for (let y = Math.floor(GRID_H * 0.5); y < Math.floor(GRID_H * 0.78); y++) {
             if (getCell(x, y) === 0) setCell(x, y, 3);
           }
         }
@@ -730,7 +731,8 @@ export const Dust = () => {
       const shakeY = shake > 0 ? Math.cos(performance.now() * 0.05) * (shake * 0.6) : 0;
 
       const camX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5 + shakeX, GRID_W * CELL - canvasEl.width));
-      const camY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 + shakeY, GRID_H * CELL - canvasEl.height));
+      const aimLift = Math.max(0, (canvasEl.height * 0.38 - mouseRef.current.y) * 0.85);
+      const camY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 - aimLift + shakeY, GRID_H * CELL - canvasEl.height));
 
       // background
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
@@ -863,41 +865,7 @@ export const Dust = () => {
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", tx - 112, ty - 30);
       }
 
-      if (quest.state === "countdown") {
-        // distant warning water wall at far left horizon
-        const warnX = -camX + 8;
-        ctx.fillStyle = "rgba(116,190,255,0.22)";
-        ctx.fillRect(warnX, 0, 28, canvasEl.height);
-      }
-
-      if (quest.state === "wave" || quest.state === "success" || quest.state === "fail") {
-        // cinematic tsunami front from LEFT
-        const frontX = quest.tsunamiX - camX;
-        const t = performance.now() * 0.001;
-
-        const wall = ctx.createLinearGradient(frontX - 72, 0, frontX + 8, 0);
-        wall.addColorStop(0, "rgba(18,84,170,0.08)");
-        wall.addColorStop(0.55, "rgba(42,132,222,0.36)");
-        wall.addColorStop(1, "rgba(176,228,255,0.62)");
-        ctx.fillStyle = wall;
-        ctx.fillRect(frontX - 72, 0, 80, canvasEl.height);
-
-        // crest foam ribbons
-        for (let i = 0; i < 18; i++) {
-          const y = (i * 41 + t * 120) % canvasEl.height;
-          const wobble = Math.sin(t * 4 + i * 0.8) * 7;
-          ctx.fillStyle = "rgba(225,247,255,0.45)";
-          ctx.fillRect(frontX - 10 + wobble, y, 22, 2);
-        }
-
-        // mist spray near crest
-        ctx.fillStyle = "rgba(214,243,255,0.18)";
-        for (let i = 0; i < 80; i++) {
-          const px = frontX - 16 + ((i * 37.13 + t * 310) % 26);
-          const py = ((i * 53.77 + t * 280) % canvasEl.height);
-          ctx.fillRect(px, py, 1, 1);
-        }
-      }
+      // removed legacy white wave overlays; keep only block-water visuals
 
       if (quest.state === "wave") {
         const floodTint = Math.min(0.2, 0.06 + quest.waveTime * 0.01);
