@@ -1108,6 +1108,7 @@ export const Dust = () => {
       const lookAheadX = Math.max(-120, Math.min(120, player.vx * 0.28));
       const aimLift = Math.max(0, (canvasEl.height * 0.38 - mouseRef.current.y) * 0.85);
       const cameraTilt = Math.max(-10, Math.min(10, player.vx * 0.016));
+      const lensBreath = 1 + Math.sin(now * 0.00045) * 0.002 + stormMood * 0.001;
       const targetCamX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5 + lookAheadX + shakeX, GRID_W * CELL - canvasEl.width));
       const targetCamY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 - aimLift + shakeY, GRID_H * CELL - canvasEl.height));
 
@@ -1191,7 +1192,8 @@ export const Dust = () => {
             const bottomAir = getCell(x, y + 1) === 0;
 
             const base = 90 + Math.floor(n * 24);
-            ctx.fillStyle = `rgb(${base + 30}, ${base + 12}, ${base - 20})`;
+            const duneWave = Math.sin((x + y * 0.35) * 0.65 + now * 0.0014) * 0.5 + 0.5;
+            ctx.fillStyle = `rgb(${base + 30 + Math.floor(duneWave * 6)}, ${base + 12 + Math.floor(duneWave * 4)}, ${base - 20})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const warmLight = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
@@ -1226,6 +1228,13 @@ export const Dust = () => {
             ctx.fillStyle = "rgba(58, 40, 22, 0.24)";
             if (hash2(x + 23, y + 29) > 0.5) ctx.fillRect(sx + 9, sy + 7, 2, 2);
             if (hash2(x + 2, y + 37) > 0.58) ctx.fillRect(sx + 5, sy + 10, 1, 1);
+
+            // fine dune ripples
+            const rippleShift = Math.sin(now * 0.0021 + x * 0.7) * 0.8;
+            ctx.fillStyle = "rgba(250, 226, 170, 0.09)";
+            ctx.fillRect(sx + 1, sy + 3 + rippleShift, CELL - 2, 1);
+            ctx.fillStyle = "rgba(82, 54, 30, 0.12)";
+            ctx.fillRect(sx + 2, sy + 7 + rippleShift * 0.6, CELL - 4, 1);
 
             if (topAir) {
               ctx.fillStyle = "rgba(248, 224, 168, 0.32)";
@@ -1262,6 +1271,15 @@ export const Dust = () => {
             inner.addColorStop(1, "rgba(8,60,132,0.24)");
             ctx.fillStyle = inner;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const fresnel = (topAir ? 0.22 : 0.08) + (leftAir || rightAir ? 0.07 : 0);
+            if (fresnel > 0.06) {
+              const edgeSheen = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              edgeSheen.addColorStop(0, `rgba(244,252,255,${fresnel + waveVisualIntensity * 0.12})`);
+              edgeSheen.addColorStop(1, "rgba(170,220,255,0)");
+              ctx.fillStyle = edgeSheen;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             const depthShade = belowWater ? 0.18 : 0.08;
             const waterBody = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
@@ -1383,8 +1401,8 @@ export const Dust = () => {
       }
 
       // directional sunlight + atmospheric shafts
-      const sunX = canvasEl.width * 0.18 + Math.sin(now * 0.00012) * 40 + lensDriftX * 8;
-      const sunY = canvasEl.height * 0.12 + lensDriftY * 6;
+      const sunX = canvasEl.width * 0.18 + Math.sin(now * 0.00012) * 40 * lensBreath + lensDriftX * 8;
+      const sunY = canvasEl.height * 0.12 + lensDriftY * 6 - stormMood * 6;
       const sunGlow = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, canvasEl.height * 0.62);
       sunGlow.addColorStop(0, "rgba(255, 227, 171, 0.24)");
       sunGlow.addColorStop(0.45, "rgba(255, 208, 138, 0.08)");
@@ -1402,6 +1420,18 @@ export const Dust = () => {
         ctx.lineTo(bx + 260, canvasEl.height + 30);
         ctx.lineTo(bx + 180, canvasEl.height + 30);
         ctx.closePath();
+        ctx.fill();
+      }
+
+      // dust motes floating through light shafts
+      const moteCount = Math.floor(34 + (1 - stormMood) * 26);
+      for (let i = 0; i < moteCount; i++) {
+        const mx = ((i * 97.3 + now * (0.01 + (i % 7) * 0.002) - camX * 0.03) % (canvasEl.width + 40)) - 20;
+        const my = ((i * 61.1 + now * (0.008 + (i % 5) * 0.0015)) % (canvasEl.height + 40)) - 20;
+        const twinkle = 0.25 + (Math.sin(now * 0.004 + i * 1.17) * 0.5 + 0.5) * 0.75;
+        ctx.fillStyle = `rgba(255, 234, 196, ${0.03 + twinkle * 0.06 * (1 - stormMood * 0.75)})`;
+        ctx.beginPath();
+        ctx.arc(mx, my, 0.8 + (i % 3) * 0.45, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -1634,6 +1664,15 @@ export const Dust = () => {
       ctx.fillStyle = warmLift;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
+      // gentle contrast curve pass
+      const gradeStrength = 0.05 + stormMood * 0.06;
+      const grade = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      grade.addColorStop(0, `rgba(255, 220, 168, ${gradeStrength * 0.65})`);
+      grade.addColorStop(0.55, "rgba(0,0,0,0)");
+      grade.addColorStop(1, `rgba(16, 34, 74, ${gradeStrength})`);
+      ctx.fillStyle = grade;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
       // falling placed dirt clumps
       const tool = toolRef.current;
       if (tool.falling.length) {
@@ -1753,8 +1792,8 @@ export const Dust = () => {
       const hudH = compactHud ? 56 : 94;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.62)");
-      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.52)");
+      hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.5)");
+      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.4)");
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
       hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.13)");
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
@@ -1770,6 +1809,9 @@ export const Dust = () => {
       const hudWind = getStormWind(questHud);
       const windLevel = Math.min(1, Math.abs(hudWind.gust) / 88);
       const windDir = hudWind.gust >= 0 ? "→" : "←";
+
+      ctx.fillStyle = "rgba(0,0,0,0.24)";
+      ctx.fillRect(28, 44, Math.min(hudW - 44, 360), 1);
 
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
