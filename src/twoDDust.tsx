@@ -1174,6 +1174,14 @@ export const Dust = () => {
       const seaSpray = clamp01(waveVisualIntensity * 0.7 + humidity * 0.35);
       const thermalHazeStrength = clamp01((1 - stormMood) * 0.65 + waveVisualIntensity * 0.25);
       const cinematicGradeStrength = clamp01(0.26 + humidity * 0.3 + waveVisualIntensity * 0.22);
+      const volumetricDust = clamp01(0.16 + (1 - stormMood) * 0.42 + velocityEnergy * 0.18);
+      const waterClarity = clamp01(0.46 + (1 - humidity) * 0.28 - stormMood * 0.18 + waveVisualIntensity * 0.14);
+      const uiSubtlety = clamp01(0.84 + uiCalm * 0.14 - waveVisualIntensity * 0.1);
+      const atmosphereTint = {
+        r: Math.floor(134 + (1 - stormMood) * 36 + sunsetWarmth * 24),
+        g: Math.floor(170 + (1 - stormMood) * 22 + sunsetWarmth * 14),
+        b: Math.floor(206 + (1 - stormMood) * 16),
+      };
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1276,6 +1284,20 @@ export const Dust = () => {
       lowMist.addColorStop(0.55, `rgba(108, 152, 184, ${0.05 + humidity * 0.05 + waveVisualIntensity * 0.03})`);
       lowMist.addColorStop(1, `rgba(34, 56, 84, ${0.1 + humidity * 0.08 + stormMood * 0.05})`);
       ctx.fillStyle = lowMist;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const volumetricVeil = ctx.createRadialGradient(
+        canvasEl.width * 0.56,
+        canvasEl.height * 0.48,
+        Math.min(canvasEl.width, canvasEl.height) * 0.12,
+        canvasEl.width * 0.56,
+        canvasEl.height * 0.48,
+        Math.max(canvasEl.width, canvasEl.height) * 0.92,
+      );
+      volumetricVeil.addColorStop(0, `rgba(${atmosphereTint.r}, ${atmosphereTint.g}, ${atmosphereTint.b}, ${0.028 + volumetricDust * 0.045})`);
+      volumetricVeil.addColorStop(0.55, `rgba(${atmosphereTint.r - 22}, ${atmosphereTint.g - 18}, ${atmosphereTint.b - 12}, ${0.012 + volumetricDust * 0.025})`);
+      volumetricVeil.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = volumetricVeil;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       ctx.fillStyle = `rgba(236, 206, 154, ${0.012 + (1 - stormMood) * 0.02})`;
@@ -1500,7 +1522,7 @@ export const Dust = () => {
             const depthTint = localDepth * 5;
             const cyanLift = Math.floor((1 - stormMood) * 12 + sunsetWarmth * 6);
             const coastalGreen = Math.floor(6 + (1 - stormMood) * 8 + Math.max(0, 2 - localDepth) * 2);
-            ctx.fillStyle = `rgba(${22 + Math.floor(wn * 16)}, ${Math.floor((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen) * waterLuminanceLift)}, ${Math.floor((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3)) * (0.94 + (waterLuminanceLift - 1) * 0.8))}, ${0.8 + wavelet * 0.08 + (waterLuminanceLift - 0.84) * 0.18})`;
+            ctx.fillStyle = `rgba(${22 + Math.floor(wn * 16)}, ${Math.floor((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen) * waterLuminanceLift)}, ${Math.floor((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3)) * (0.94 + (waterLuminanceLift - 1) * 0.8))}, ${0.76 + wavelet * 0.09 + (waterLuminanceLift - 0.84) * 0.14 + waterClarity * 0.08})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const sedimentMix =
@@ -1711,6 +1733,14 @@ export const Dust = () => {
           }
         }
       }
+
+      // broad water reflection sweep (visual-only screen-space pass)
+      const reflectionSweep = ctx.createLinearGradient(0, canvasEl.height * 0.24, 0, canvasEl.height * 0.9);
+      reflectionSweep.addColorStop(0, `rgba(214, 238, 255, ${0.015 + waterClarity * 0.03})`);
+      reflectionSweep.addColorStop(0.6, `rgba(132, 186, 230, ${0.012 + waterClarity * 0.02})`);
+      reflectionSweep.addColorStop(1, "rgba(38, 74, 128, 0)");
+      ctx.fillStyle = reflectionSweep;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // world-space depth fog + heat shimmer
       const horizonFog = ctx.createLinearGradient(0, canvasEl.height * 0.18, 0, canvasEl.height);
@@ -2227,7 +2257,7 @@ export const Dust = () => {
       ctx.fillRect(14, 14, hudW, hudH);
       ctx.fillStyle = hudGlow;
       ctx.fillRect(14, 14, hudW, hudH);
-      ctx.strokeStyle = "rgba(170,210,255,0.24)";
+      ctx.strokeStyle = `rgba(170,210,255,${0.18 + uiSubtlety * 0.1})`;
       ctx.strokeRect(14, 14, hudW, hudH);
       const hudSheen = ctx.createLinearGradient(14, 14, 14 + hudW, 14 + hudH);
       hudSheen.addColorStop(0, "rgba(214, 236, 255, 0.09)");
@@ -2237,6 +2267,25 @@ export const Dust = () => {
       ctx.fillRect(14, 14, hudW, hudH);
       ctx.fillStyle = "rgba(220,242,255,0.04)";
       ctx.fillRect(15, 15, hudW - 2, 1);
+
+      // subtle corner brackets for cleaner HUD framing
+      ctx.strokeStyle = `rgba(196, 230, 255, ${0.16 + uiSubtlety * 0.16})`;
+      ctx.lineWidth = 1;
+      const cLen = 10;
+      ctx.beginPath();
+      ctx.moveTo(16, 16 + cLen);
+      ctx.lineTo(16, 16);
+      ctx.lineTo(16 + cLen, 16);
+      ctx.moveTo(14 + hudW - cLen - 2, 16);
+      ctx.lineTo(14 + hudW - 2, 16);
+      ctx.lineTo(14 + hudW - 2, 16 + cLen);
+      ctx.moveTo(16, 14 + hudH - cLen - 2);
+      ctx.lineTo(16, 14 + hudH - 2);
+      ctx.lineTo(16 + cLen, 14 + hudH - 2);
+      ctx.moveTo(14 + hudW - cLen - 2, 14 + hudH - 2);
+      ctx.lineTo(14 + hudW - 2, 14 + hudH - 2);
+      ctx.lineTo(14 + hudW - 2, 14 + hudH - cLen - 2);
+      ctx.stroke();
 
       const hudInnerFog = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
       hudInnerFog.addColorStop(0, `rgba(184, 220, 255, ${0.04 + uiCalm * 0.04})`);
@@ -2258,7 +2307,7 @@ export const Dust = () => {
       ctx.font = "600 16px system-ui";
       ctx.fillText(`2D Dust ${GAME_VERSION} · Level 1`, 28, 38);
       ctx.font = "13px system-ui";
-      ctx.fillStyle = `rgba(214, 234, 252, ${0.84 + uiNoiseFade * 0.12})`;
+      ctx.fillStyle = `rgba(214, 234, 252, ${(0.82 + uiNoiseFade * 0.1) * uiSubtlety})`;
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 58);
       ctx.shadowColor = "transparent";
       ctx.shadowBlur = 0;
@@ -2383,6 +2432,12 @@ export const Dust = () => {
       ctx.fillStyle = "#e8f5ff";
       ctx.font = "bold 14px system-ui";
       ctx.fillText(grabActive ? "Mode: GRAB" : "Mode: PLACE", toggleX + 16, toggleY + 28);
+
+      // lightweight cinematic framing (visual-only, non-intrusive)
+      const letterbox = Math.floor(4 + cinematicFocus * 6 + waveVisualIntensity * 8);
+      ctx.fillStyle = `rgba(4, 8, 14, ${0.2 + stormMood * 0.15})`;
+      ctx.fillRect(0, 0, canvasEl.width, letterbox);
+      ctx.fillRect(0, canvasEl.height - letterbox, canvasEl.width, letterbox);
 
       // lightweight post stack: bloom-ish lift + edge softness
       const highlightWash = ctx.createRadialGradient(
