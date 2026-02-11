@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-type Cell = 0 | 1 | 2; // 0 air, 1 dirt, 2 stone
+type Cell = 0 | 1 | 2 | 3; // 0 air, 1 dirt, 2 stone, 3 water
 
 type Player = {
   x: number;
@@ -92,7 +92,6 @@ export const Dust = () => {
     tsunamiSpeed: number;
     waveTime: number;
     resultText: string;
-    water: Array<{ x: number; y: number; vx: number; vy: number; life: number }>;
   }>({
     state: "explore",
     timer: 60,
@@ -101,7 +100,6 @@ export const Dust = () => {
     tsunamiSpeed: 78,
     waveTime: 0,
     resultText: "",
-    water: [],
   });
 
   const keysRef = useRef<Record<string, boolean>>({});
@@ -330,6 +328,14 @@ export const Dust = () => {
     function setCell(x: number, y: number, v: Cell) {
       if (!inBounds(x, y)) return;
       world[idx(x, y)] = v;
+    }
+
+    function clearWater() {
+      for (let y = 0; y < GRID_H; y++) {
+        for (let x = 0; x < GRID_W; x++) {
+          if (getCell(x, y) === 3) setCell(x, y, 0);
+        }
+      }
     }
 
     function tribeBarrierStrength() {
@@ -562,7 +568,7 @@ export const Dust = () => {
           quest.timer = 60;
           quest.tsunamiX = -220;
           quest.waveTime = 0;
-          quest.water.length = 0;
+          clearWater();
         }
       } else if (quest.state === "countdown") {
         quest.timer = Math.max(0, quest.timer - dt);
@@ -575,58 +581,64 @@ export const Dust = () => {
         quest.waveTime += dt;
         quest.tsunamiX += quest.tsunamiSpeed * dt;
 
-        // spawn physics-based water clumps from left side
-        const spawn = 8;
-        for (let i = 0; i < spawn; i++) {
-          const ry = (GRID_H * CELL * 0.28) + Math.random() * (GRID_H * CELL * 0.5);
-          quest.water.push({
-            x: Math.min(quest.tsunamiX + Math.random() * 18, 36),
-            y: ry,
-            vx: 120 + Math.random() * 75,
-            vy: -20 + Math.random() * 40,
-            life: 8,
-          });
+        // Inject a real blocky water front from LEFT
+        const frontCell = Math.min(GRID_W - 1, Math.floor(quest.tsunamiX / CELL));
+        for (let x = 0; x <= frontCell; x++) {
+          for (let y = 4; y < Math.floor(GRID_H * 0.74); y++) {
+            if (getCell(x, y) === 0) setCell(x, y, 3);
+          }
         }
-        if (quest.water.length > 1800) quest.water.splice(0, quest.water.length - 1800);
+
+        // Cheap fluid step for water cells (block-based flow)
+        const steps = 2;
+        for (let step = 0; step < steps; step++) {
+          for (let y = GRID_H - 2; y >= 1; y--) {
+            for (let x = 1; x < GRID_W - 1; x++) {
+              if (getCell(x, y) !== 3) continue;
+
+              if (getCell(x, y + 1) === 0) {
+                setCell(x, y + 1, 3);
+                setCell(x, y, 0);
+                continue;
+              }
+
+              const dir = Math.random() < 0.5 ? -1 : 1;
+              if (getCell(x + dir, y + 1) === 0) {
+                setCell(x + dir, y + 1, 3);
+                setCell(x, y, 0);
+                continue;
+              }
+              if (getCell(x - dir, y + 1) === 0) {
+                setCell(x - dir, y + 1, 3);
+                setCell(x, y, 0);
+                continue;
+              }
+
+              if (getCell(x + dir, y) === 0) {
+                setCell(x + dir, y, 3);
+                setCell(x, y, 0);
+                continue;
+              }
+              if (getCell(x - dir, y) === 0) {
+                setCell(x - dir, y, 3);
+                setCell(x, y, 0);
+              }
+            }
+          }
+        }
 
         const barrier = tribeBarrierStrength();
-        let tribeHit = false;
-
-        for (let i = quest.water.length - 1; i >= 0; i--) {
-          const w = quest.water[i];
-          w.vy += GRAVITY * dt * 0.55;
-          w.vx *= 0.997;
-          w.x += w.vx * dt;
-          w.y += w.vy * dt;
-          w.life -= dt;
-
-          const cx = Math.floor(w.x / CELL);
-          const cy = Math.floor(w.y / CELL);
-
-          if (!inBounds(cx, cy) || w.life <= 0) {
-            if (w.x > GRID_W * CELL + 20 || w.y > GRID_H * CELL + 20 || w.life <= 0) {
-              quest.water.splice(i, 1);
-            }
-            continue;
-          }
-
-          if (getCell(cx, cy) !== 0) {
-            // simple fluid collision: bounce and try to slide up/side
-            w.y -= w.vy * dt;
-            w.vy *= -0.2;
-            w.vx *= 0.85;
-            const leftAir = inBounds(cx - 1, cy) && getCell(cx - 1, cy) === 0;
-            const rightAir = inBounds(cx + 1, cy) && getCell(cx + 1, cy) === 0;
-            if (leftAir || rightAir) w.vx += leftAir && rightAir ? (Math.random() < 0.5 ? -60 : 60) : leftAir ? -60 : 60;
-          }
-
-          if (Math.abs(w.x - tribeCenterX) < 14 && Math.abs(w.y - tribeCenterY) < 14) {
-            tribeHit = true;
+        const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+        const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
+        let tribeWet = false;
+        for (let y = tcy - 2; y <= tcy + 2 && !tribeWet; y++) {
+          for (let x = tcx - 2; x <= tcx + 2 && !tribeWet; x++) {
+            if (inBounds(x, y) && getCell(x, y) === 3) tribeWet = true;
           }
         }
 
-        const wavePassed = quest.tsunamiX > GRID_W * CELL + 200 && quest.waveTime > 8;
-        if (tribeHit && barrier < 16) {
+        const wavePassed = frontCell >= GRID_W - 2 && quest.waveTime > 5;
+        if (tribeWet && barrier < 16) {
           quest.state = "fail";
           quest.resultText = "The wave broke through. Build a bigger wall and try again.";
         } else if (wavePassed) {
@@ -707,14 +719,12 @@ export const Dust = () => {
             ctx.fillStyle = `rgb(${base + 28}, ${base + 10}, ${base - 20})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
-            // subtle internal color variation for grainy look
             const grad = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
             grad.addColorStop(0, "rgba(238, 199, 132, 0.12)");
             grad.addColorStop(1, "rgba(90, 62, 30, 0.14)");
             ctx.fillStyle = grad;
             ctx.fillRect(sx, sy, CELL, CELL);
 
-            // grain/sand speckle
             ctx.fillStyle = "rgba(234, 196, 134, 0.24)";
             if (hash2(x + 11, y + 7) > 0.35) ctx.fillRect(sx + 2, sy + 2, 2, 2);
             if (hash2(x + 17, y + 3) > 0.45) ctx.fillRect(sx + 7, sy + 3, 2, 2);
@@ -725,7 +735,6 @@ export const Dust = () => {
             if (hash2(x + 23, y + 29) > 0.5) ctx.fillRect(sx + 9, sy + 7, 2, 2);
             if (hash2(x + 2, y + 37) > 0.58) ctx.fillRect(sx + 5, sy + 10, 1, 1);
 
-            // fake soft contouring based on neighboring air
             if (getCell(x, y - 1) === 0) {
               ctx.fillStyle = "rgba(245, 213, 150, 0.28)";
               ctx.fillRect(sx, sy, CELL, 2);
@@ -742,6 +751,12 @@ export const Dust = () => {
               ctx.fillStyle = "rgba(40, 26, 14, 0.18)";
               ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
             }
+          } else if (c === 3) {
+            const wn = hash2(x + Math.floor(performance.now() * 0.03), y);
+            ctx.fillStyle = `rgba(${55 + Math.floor(wn * 25)}, ${135 + Math.floor(wn * 45)}, ${210 + Math.floor(wn * 30)}, 0.85)`;
+            ctx.fillRect(sx, sy, CELL, CELL);
+            ctx.fillStyle = "rgba(220,245,255,0.34)";
+            ctx.fillRect(sx, sy, CELL, 2);
           } else {
             ctx.fillStyle = "#5b5f68";
             ctx.fillRect(sx, sy, CELL, CELL);
@@ -786,30 +801,14 @@ export const Dust = () => {
       }
 
       if (quest.state === "wave" || quest.state === "success" || quest.state === "fail") {
-        // physics-based tsunami body
+        // visible tsunami front from LEFT
         const frontX = quest.tsunamiX - camX;
-        const bodyW = 34;
-        const bodyGrad = ctx.createLinearGradient(frontX, 0, frontX + bodyW, 0);
-        bodyGrad.addColorStop(0, "rgba(95,176,245,0.18)");
-        bodyGrad.addColorStop(1, "rgba(28,108,192,0.5)");
-        ctx.fillStyle = bodyGrad;
-        ctx.fillRect(frontX - bodyW, 0, bodyW, canvasEl.height);
-
-        ctx.fillStyle = "rgba(205,238,255,0.45)";
-        for (let i = 0; i < 10; i++) {
-          const y = (i * 58 + performance.now() * 0.08) % canvasEl.height;
-          ctx.fillRect(frontX - 14 + Math.sin(i + performance.now() * 0.004) * 5, y, 18, 2);
-        }
-
-        for (const w of quest.water) {
-          ctx.fillStyle = "rgba(90,170,245,0.42)";
-          ctx.beginPath();
-          ctx.arc(w.x - camX, w.y - camY, 3.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "rgba(220,246,255,0.35)";
-          ctx.beginPath();
-          ctx.arc(w.x - camX - 1, w.y - camY - 1, 1.2, 0, Math.PI * 2);
-          ctx.fill();
+        ctx.fillStyle = "rgba(34,120,210,0.25)";
+        ctx.fillRect(frontX - 24, 0, 24, canvasEl.height);
+        ctx.fillStyle = "rgba(210,244,255,0.4)";
+        for (let i = 0; i < 11; i++) {
+          const y = (i * 57 + performance.now() * 0.09) % canvasEl.height;
+          ctx.fillRect(frontX - 14 + Math.sin(i + performance.now() * 0.005) * 4, y, 14, 2);
         }
       }
 
