@@ -141,11 +141,20 @@ export const Dust = () => {
 
   const [dirt, setDirt] = useState(0);
   const dirtRef = useRef(0);
-  const audioRef = useRef<{ ctx: AudioContext | null; enabled: boolean; lastMineAt: number; lastPlaceAt: number }>({
+  const audioRef = useRef<{
+    ctx: AudioContext | null;
+    enabled: boolean;
+    lastMineAt: number;
+    lastPlaceAt: number;
+    storm: { src: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode } | null;
+    stormLevel: number;
+  }>({
     ctx: null,
     enabled: false,
     lastMineAt: 0,
     lastPlaceAt: 0,
+    storm: null,
+    stormLevel: 0,
   });
 
   useEffect(() => {
@@ -233,6 +242,63 @@ export const Dust = () => {
       gain.connect(ctx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.1);
+    }
+
+    function ensureStormAudio() {
+      const ctx = ensureAudio();
+      if (!ctx) return null;
+      if (audioRef.current.storm) return audioRef.current.storm;
+
+      const dur = 1.8;
+      const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        const prev = i > 0 ? data[i - 1] : 0;
+        data[i] = prev * 0.92 + white * 0.08;
+      }
+
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(260, ctx.currentTime);
+      filter.Q.setValueAtTime(0.7, ctx.currentTime);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      src.start();
+
+      audioRef.current.storm = { src, filter, gain };
+      return audioRef.current.storm;
+    }
+
+    function updateStormAudio(level: number, dt: number) {
+      const target = Math.max(0, Math.min(1, level));
+      const current = audioRef.current.stormLevel;
+      audioRef.current.stormLevel = current + (target - current) * Math.min(1, dt * 2.8);
+
+      if (audioRef.current.stormLevel < 0.01 && !audioRef.current.storm) return;
+
+      const storm = ensureStormAudio();
+      const ctx = audioRef.current.ctx;
+      if (!storm || !ctx) return;
+
+      const t = ctx.currentTime;
+      const strength = audioRef.current.stormLevel;
+      const targetGain = 0.0001 + strength * 0.075;
+      const targetFreq = 180 + strength * 430;
+      storm.gain.gain.cancelScheduledValues(t);
+      storm.gain.gain.setTargetAtTime(targetGain, t, 0.08);
+      storm.filter.frequency.cancelScheduledValues(t);
+      storm.filter.frequency.setTargetAtTime(targetFreq, t, 0.08);
     }
 
     function resize() {
@@ -755,6 +821,10 @@ export const Dust = () => {
           quest.resultText = barrier >= BARRIER_GOAL ? "Barrier held! The tribe is safe." : "You survived this one, but stronger walls are safer.";
         }
       }
+
+      const stormCountdown = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 90)) : 0;
+      const stormWave = quest.state === "wave" ? Math.max(0, Math.min(1, 0.45 + quest.waveTime * 0.2)) : 0;
+      updateStormAudio(Math.max(stormCountdown, stormWave), dt);
 
       // clamp in world
       player.x = Math.max(0, Math.min(player.x, GRID_W * CELL - player.w));
@@ -1363,6 +1433,13 @@ export const Dust = () => {
       window.removeEventListener("selectstart", preventSelect);
       document.body.style.overscrollBehavior = "";
       document.body.style.userSelect = "";
+      if (audioRef.current.storm) {
+        audioRef.current.storm.src.stop();
+        audioRef.current.storm.src.disconnect();
+        audioRef.current.storm.filter.disconnect();
+        audioRef.current.storm.gain.disconnect();
+        audioRef.current.storm = null;
+      }
       if (audioRef.current.ctx) {
         audioRef.current.ctx.close();
         audioRef.current.ctx = null;
