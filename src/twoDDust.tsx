@@ -21,7 +21,7 @@ const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.0";
+const GAME_VERSION = "v0.1.1";
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -110,6 +110,8 @@ export const Dust = () => {
     moveStartX: 0,
     moveStartY: 0,
     moveAxisX: 0,
+    stickX: 0,
+    stickY: 0,
     jumpQueued: false,
     toolId: -1,
     toolMode: "none" as "none" | "suck" | "drop",
@@ -251,9 +253,15 @@ export const Dust = () => {
       e.preventDefault();
       const mobile = mobileRef.current;
       if (e.pointerId === mobile.moveId) {
+        const joyRadius = 60;
         const dx = e.clientX - mobile.moveStartX;
-        mobile.moveAxisX = Math.max(-1, Math.min(1, dx / 42));
-        if (mobile.moveStartY - e.clientY > 34) {
+        const dy = e.clientY - mobile.moveStartY;
+        const mag = Math.hypot(dx, dy);
+        const scale = mag > joyRadius ? joyRadius / mag : 1;
+        mobile.stickX = dx * scale;
+        mobile.stickY = dy * scale;
+        mobile.moveAxisX = Math.max(-1, Math.min(1, mobile.stickX / joyRadius));
+        if (-mobile.stickY > 30) {
           mobile.jumpQueued = true;
         }
       }
@@ -279,6 +287,8 @@ export const Dust = () => {
         mobile.toolMode = "none";
         mobile.moveId = -1;
         mobile.moveAxisX = 0;
+        mobile.stickX = 0;
+        mobile.stickY = 0;
         mouseRef.current.left = false;
         mouseRef.current.right = false;
         if (e.pointerType !== "mouse") e.preventDefault();
@@ -293,13 +303,18 @@ export const Dust = () => {
 
       e.preventDefault();
       const mobile = mobileRef.current;
-      const moveZone = e.clientY > canvasEl.height * 0.56;
+      const joyCenterX = 96;
+      const joyCenterY = canvasEl.height - 108;
+      const joyActivateR = 74;
+      const inJoy = Math.hypot(e.clientX - joyCenterX, e.clientY - joyCenterY) <= joyActivateR;
 
-      if (moveZone && mobile.moveId === -1) {
+      if (inJoy && mobile.moveId === -1) {
         mobile.moveId = e.pointerId;
-        mobile.moveStartX = e.clientX;
-        mobile.moveStartY = e.clientY;
+        mobile.moveStartX = joyCenterX;
+        mobile.moveStartY = joyCenterY;
         mobile.moveAxisX = 0;
+        mobile.stickX = 0;
+        mobile.stickY = 0;
         return;
       }
 
@@ -323,6 +338,8 @@ export const Dust = () => {
       if (e.pointerId === mobile.moveId) {
         mobile.moveId = -1;
         mobile.moveAxisX = 0;
+        mobile.stickX = 0;
+        mobile.stickY = 0;
       }
 
       if (e.pointerId === mobile.toolId) {
@@ -992,16 +1009,40 @@ export const Dust = () => {
       if (questHud.state === "success") objective = `Success: ${questHud.resultText}`;
       if (questHud.state === "fail") objective = `Failed: ${questHud.resultText}`;
 
+      const visCols = Math.floor(canvasEl.width / CELL);
+      const visRows = Math.floor(canvasEl.height / CELL);
+      const visSquares = visCols * visRows;
+
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
       ctx.fillText(`2D Dust Prototype ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
-      ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 60);
+      ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
       ctx.fillText(objective, 28, 82);
-      ctx.fillText("Mouse: L Suck / R Drop | Touch: Bottom-half drag=move/flick jump | Use bottom-right toggle for Grab/Place", 28, 104);
+      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
+
+      // mobile left joystick (movement only)
+      const mobile = mobileRef.current;
+      const joyCenterX = 96;
+      const joyCenterY = canvasEl.height - 108;
+      const joyR = 60;
+
+      ctx.fillStyle = "rgba(9,17,30,0.42)";
+      ctx.beginPath();
+      ctx.arc(joyCenterX, joyCenterY, joyR + 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(186,218,255,0.35)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(joyCenterX, joyCenterY, joyR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(115,205,255,0.4)";
+      ctx.beginPath();
+      ctx.arc(joyCenterX + mobile.stickX, joyCenterY + mobile.stickY, 24, 0, Math.PI * 2);
+      ctx.fill();
 
       // mobile tool toggle (bottom-right)
-      const mobile = mobileRef.current;
       const toggleW = 132;
       const toggleH = 44;
       const toggleX = canvasEl.width - toggleW - 16;
