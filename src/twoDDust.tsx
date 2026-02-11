@@ -1061,7 +1061,6 @@ export const Dust = () => {
       const barrier = tribeBarrierStrength();
       const barrierPct = Math.max(0, Math.min(1, barrier / BARRIER_GOAL));
       const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
-      const barrierPlan = getBarrierPlan();
       const barrierMissing = Math.max(0, BARRIER_GOAL - barrier);
       const nearestGap = findNearestBarrierGap(player.x + player.w * 0.5, player.y + player.h * 0.5);
 
@@ -1149,39 +1148,14 @@ export const Dust = () => {
         ctx.fillText("Tribe ahead → Find and talk", tx - 46, ty - 20);
       }
 
-      if (quest.state === "countdown" || quest.state === "wave") {
-        const pulse = 0.45 + Math.sin(performance.now() * 0.004) * 0.2;
-        for (let y = barrierPlan.y0; y <= barrierPlan.y1; y++) {
-          for (let x = barrierPlan.x0; x <= barrierPlan.x1; x++) {
-            if (!inBounds(x, y)) continue;
-            const sx = x * CELL - camX;
-            const sy = y * CELL - camY;
-            const c = getCell(x, y);
-
-            if (c === 1) {
-              ctx.fillStyle = "rgba(86,213,143,0.24)";
-              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
-              ctx.strokeStyle = "rgba(122,235,168,0.55)";
-            } else if (c === 3) {
-              ctx.fillStyle = "rgba(120,180,255,0.18)";
-              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
-              ctx.strokeStyle = "rgba(170,215,255,0.45)";
-            } else {
-              ctx.strokeStyle = `rgba(255, 203, 122, ${0.25 + pulse * 0.45})`;
-            }
-
-            ctx.lineWidth = 1.25;
-            ctx.strokeRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
-          }
-        }
-      }
-
       if (quest.state === "dialog") {
+        const toastW = 290;
+        const toastX = Math.max(12, Math.min(tx - 120, canvasEl.width - toastW - 12));
         ctx.fillStyle = "rgba(20,28,45,0.9)";
-        ctx.fillRect(tx - 120, ty - 56, 290, 40);
+        ctx.fillRect(toastX, ty - 56, toastW, 40);
         ctx.fillStyle = "#d7ecff";
         ctx.font = "13px system-ui";
-        ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", tx - 112, ty - 30);
+        ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", toastX + 8, ty - 30);
       }
 
       // build guidance polish: show nearest missing wall slot and direction arrow
