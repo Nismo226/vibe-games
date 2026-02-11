@@ -1171,6 +1171,9 @@ export const Dust = () => {
       const sandAlbedoBoost = lerp(0.88, 1.06, clamp01((1 - stormMood) * 0.72 + sunsetWarmth * 0.22));
       const waterLuminanceLift = lerp(0.84, 1.1, clamp01((1 - stormMood) * 0.58 + waveVisualIntensity * 0.35));
       const uiNoiseFade = clamp01(0.82 - waveVisualIntensity * 0.28 - stormMood * 0.22);
+      const seaSpray = clamp01(waveVisualIntensity * 0.7 + humidity * 0.35);
+      const thermalHazeStrength = clamp01((1 - stormMood) * 0.65 + waveVisualIntensity * 0.25);
+      const cinematicGradeStrength = clamp01(0.26 + humidity * 0.3 + waveVisualIntensity * 0.22);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1280,6 +1283,19 @@ export const Dust = () => {
         const drift = Math.sin(now * 0.0011 + y * 0.09) * (1.5 + humidity * 2.3);
         ctx.fillRect(drift, y, canvasEl.width, 1);
       }
+
+      // dry-heat shimmer ribbons near horizon + near-ground mirage band
+      ctx.fillStyle = `rgba(255, 222, 174, ${0.008 + thermalHazeStrength * 0.024})`;
+      for (let y = canvasEl.height * 0.42; y < canvasEl.height * 0.94; y += 22) {
+        const warp = Math.sin(now * 0.0013 + y * 0.065) * (1.3 + thermalHazeStrength * 3.4);
+        ctx.fillRect(warp, y, canvasEl.width, 1);
+      }
+      const mirageBand = ctx.createLinearGradient(0, canvasEl.height * 0.62, 0, canvasEl.height);
+      mirageBand.addColorStop(0, "rgba(255, 234, 194, 0)");
+      mirageBand.addColorStop(0.5, `rgba(255, 216, 158, ${0.018 + thermalHazeStrength * 0.03})`);
+      mirageBand.addColorStop(1, "rgba(255, 208, 148, 0)");
+      ctx.fillStyle = mirageBand;
+      ctx.fillRect(0, canvasEl.height * 0.55, canvasEl.width, canvasEl.height * 0.45);
 
       // camera lens drift (visual only)
       const lensDriftX = Math.sin(now * 0.0006) * 1.2 + cameraTilt * 0.18;
@@ -1400,6 +1416,15 @@ export const Dust = () => {
             ctx.fillRect(sx + 1, sy + 3 + rippleShift, CELL - 2, 1);
             ctx.fillStyle = "rgba(82, 54, 30, 0.12)";
             ctx.fillRect(sx + 2, sy + 7 + rippleShift * 0.6, CELL - 4, 1);
+
+            const sparkle = hash2(x * 11 + Math.floor(now * 0.0017), y * 13 + 9);
+            if (topAir && sparkle > 0.82 - (1 - stormMood) * 0.14) {
+              ctx.fillStyle = `rgba(255, 244, 210, ${0.08 + (sparkle - 0.82) * 0.45 + airGlow * 0.06})`;
+              const glintX = sx + 1 + ((sparkle * 10.5) % (CELL - 2));
+              const glintY = sy + 1 + ((sparkle * 6.3) % 2);
+              ctx.fillRect(glintX, glintY, 1, 1);
+              if (sparkle > 0.93) ctx.fillRect(glintX + 1, glintY, 1, 1);
+            }
 
             if (topAir) {
               ctx.fillStyle = "rgba(248, 224, 168, 0.32)";
@@ -1878,6 +1903,21 @@ export const Dust = () => {
           ctx.fill();
         }
 
+        // sea-spray streak layer (visual intensity only)
+        const sprayCount = Math.floor(24 + seaSpray * 74);
+        ctx.strokeStyle = `rgba(226, 246, 255, ${0.05 + seaSpray * 0.12})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < sprayCount; i++) {
+          const sxSpray = ((i * 61.7 + now * (0.06 + seaSpray * 0.11)) % (canvasEl.width + 120)) - 60;
+          const sySpray = ((i * 43.3 + now * (0.085 + seaSpray * 0.14)) % (canvasEl.height + 90)) - 45;
+          const len = 4 + seaSpray * 8;
+          const tilt = -2.5 - seaSpray * 5.5;
+          ctx.moveTo(sxSpray, sySpray);
+          ctx.lineTo(sxSpray + len, sySpray + tilt);
+        }
+        ctx.stroke();
+
         // lensy water refraction pass during impact
         const ripple = 0.6 + Math.sin(now * 0.004) * 0.4;
         ctx.strokeStyle = `rgba(196, 234, 255, ${0.05 + waveVisualIntensity * 0.08})`;
@@ -2198,6 +2238,12 @@ export const Dust = () => {
       ctx.fillStyle = "rgba(220,242,255,0.04)";
       ctx.fillRect(15, 15, hudW - 2, 1);
 
+      const hudInnerFog = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
+      hudInnerFog.addColorStop(0, `rgba(184, 220, 255, ${0.04 + uiCalm * 0.04})`);
+      hudInnerFog.addColorStop(1, "rgba(42, 72, 108, 0)");
+      ctx.fillStyle = hudInnerFog;
+      ctx.fillRect(15, 15, hudW - 2, hudH - 2);
+
       const hudWind = getStormWind(questHud);
       const windLevel = Math.min(1, Math.abs(hudWind.gust) / 88);
       const windDir = hudWind.gust >= 0 ? "→" : "←";
@@ -2414,6 +2460,13 @@ export const Dust = () => {
       bleach.addColorStop(0.4, `rgba(214, 226, 240, ${colorBleach * 0.12})`);
       bleach.addColorStop(1, `rgba(10, 18, 30, ${0.04 + colorBleach * 0.22})`);
       ctx.fillStyle = bleach;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const finalTone = ctx.createLinearGradient(0, 0, canvasEl.width, canvasEl.height);
+      finalTone.addColorStop(0, `rgba(255, 220, 174, ${0.018 + cinematicGradeStrength * 0.03})`);
+      finalTone.addColorStop(0.52, "rgba(0,0,0,0)");
+      finalTone.addColorStop(1, `rgba(14, 28, 58, ${0.03 + cinematicGradeStrength * 0.045})`);
+      ctx.fillStyle = finalTone;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // subtle film-gate flicker around frame to sell camera presentation
