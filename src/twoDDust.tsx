@@ -1003,32 +1003,28 @@ export const Dust = () => {
           }
         }
 
-          const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
-        const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
+        const tx0 = Math.floor(tribe.x / CELL);
+        const ty0 = Math.floor(tribe.y / CELL);
+        const tx1 = Math.floor((tribe.x + tribe.w - 1) / CELL);
+        const ty1 = Math.floor((tribe.y + tribe.h - 1) / CELL);
         let tribeWet = false;
-        for (let y = tcy - 2; y <= tcy + 2 && !tribeWet; y++) {
-          for (let x = tcx - 2; x <= tcx + 2 && !tribeWet; x++) {
+        for (let y = ty0; y <= ty1 && !tribeWet; y++) {
+          for (let x = tx0; x <= tx1 && !tribeWet; x++) {
             if (inBounds(x, y) && getCell(x, y) === 3) tribeWet = true;
           }
         }
 
-        const barrier = tribeBarrierStrength();
         const buried = tribeEntombed();
         const wavePassed = frontCell >= GRID_W - 2 && quest.waveTime > 5;
         if (buried) {
           quest.state = "fail";
           quest.resultText = "The tribe was buried. Keep an open safety pocket around them.";
-        } else if (tribeWet && barrier < BARRIER_GOAL) {
+        } else if (tribeWet) {
           quest.state = "fail";
-          quest.resultText = "The wave broke through. Build a bigger wall and try again.";
+          quest.resultText = "The wave hit the tribe.";
         } else if (wavePassed) {
-          if (barrier >= BARRIER_GOAL && !buried) {
-            quest.state = "success";
-            quest.resultText = "Barrier held! The tribe is safe.";
-          } else {
-            quest.state = "fail";
-            quest.resultText = "Defense incomplete. Build the wave-facing barrier without burying the tribe.";
-          }
+          quest.state = "success";
+          quest.resultText = "Barrier held! The tribe is safe.";
         }
       }
 
