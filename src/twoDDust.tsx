@@ -1146,6 +1146,9 @@ export const Dust = () => {
       const atmosphereDensity = Math.min(1, 0.24 + humidity * 0.52 + waveVisualIntensity * 0.28);
       const microContrast = 0.92 + (1 - humidity) * 0.18;
       const uiCalm = Math.max(0, 1 - waveVisualIntensity * 0.8 - stormMood * 0.55);
+      const velocityEnergy = Math.min(1, Math.hypot(player.vx, player.vy) / 460);
+      const cinematicFocus = clamp01(0.3 + velocityEnergy * 0.55 + waveVisualIntensity * 0.4);
+      const colorBleach = clamp01(0.08 + humidity * 0.16 + waveVisualIntensity * 0.2);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1510,6 +1513,13 @@ export const Dust = () => {
                 const ridgeY = sy + 1 + crest * 0.25;
                 ctx.fillRect(sx + 1, ridgeY, CELL - 2, 1);
               }
+
+              const crestGlow = ctx.createLinearGradient(sx, sy - 2, sx, sy + CELL);
+              crestGlow.addColorStop(0, `rgba(240, 252, 255, ${0.08 + waveVisualIntensity * 0.1})`);
+              crestGlow.addColorStop(0.2, `rgba(164, 226, 255, ${0.05 + humidity * 0.04})`);
+              crestGlow.addColorStop(1, "rgba(0,0,0,0)");
+              ctx.fillStyle = crestGlow;
+              ctx.fillRect(sx, sy - 1, CELL, CELL + 1);
             }
 
             const caustic = hash2(x * 3 + Math.floor(t * 17), y * 5 + Math.floor(t * 12));
@@ -1647,6 +1657,21 @@ export const Dust = () => {
         ctx.arc(mx, my, 0.8 + (i % 3) * 0.45, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // near-lens drifting dust streaks for foreground depth
+      const foregroundDust = Math.floor(8 + cinematicFocus * 16);
+      ctx.strokeStyle = `rgba(255, 226, 184, ${0.04 + (1 - stormMood) * 0.06})`;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      for (let i = 0; i < foregroundDust; i++) {
+        const fx = ((i * 131.9 + now * (0.026 + (i % 4) * 0.01) - camX * 0.08) % (canvasEl.width + 120)) - 60;
+        const fy = ((i * 83.1 + now * (0.015 + (i % 6) * 0.004)) % (canvasEl.height + 80)) - 40;
+        const len = 5 + (i % 5) * 1.8 + velocityEnergy * 4;
+        const lift = -2 + Math.sin(now * 0.002 + i) * 1.4;
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(fx + len, fy + lift);
+      }
+      ctx.stroke();
 
       const tribe = tribeRef.current;
       const quest = questRef.current;
@@ -1860,6 +1885,19 @@ export const Dust = () => {
       vignette.addColorStop(0, "rgba(0,0,0,0)");
       vignette.addColorStop(1, "rgba(0,0,0,0.24)");
       ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const focusFalloff = ctx.createRadialGradient(
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.5,
+        Math.min(canvasEl.width, canvasEl.height) * (0.18 + (1 - cinematicFocus) * 0.1),
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.5,
+        Math.max(canvasEl.width, canvasEl.height) * 0.74,
+      );
+      focusFalloff.addColorStop(0, "rgba(0,0,0,0)");
+      focusFalloff.addColorStop(1, `rgba(18, 28, 42, ${0.05 + cinematicFocus * 0.12})`);
+      ctx.fillStyle = focusFalloff;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // gentle lens chroma at frame edges
@@ -2246,6 +2284,22 @@ export const Dust = () => {
       toneCurve.addColorStop(1, `rgba(2, 8, 18, ${0.06 + humidity * 0.04})`);
       ctx.fillStyle = toneCurve;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // mild bleach-bypass inspired pass during high action for cinematic punch
+      const bleach = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      bleach.addColorStop(0, `rgba(252, 242, 224, ${colorBleach * 0.34})`);
+      bleach.addColorStop(0.4, `rgba(214, 226, 240, ${colorBleach * 0.12})`);
+      bleach.addColorStop(1, `rgba(10, 18, 30, ${0.04 + colorBleach * 0.22})`);
+      ctx.fillStyle = bleach;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // subtle film-gate flicker around frame to sell camera presentation
+      const gatePulse = 0.02 + Math.sin(now * 0.009) * 0.008 + cinematicFocus * 0.012;
+      ctx.fillStyle = `rgba(4, 8, 16, ${gatePulse})`;
+      ctx.fillRect(0, 0, canvasEl.width, 2);
+      ctx.fillRect(0, canvasEl.height - 2, canvasEl.width, 2);
+      ctx.fillRect(0, 0, 1, canvasEl.height);
+      ctx.fillRect(canvasEl.width - 1, 0, 1, canvasEl.height);
 
       // tiny ordered-noise dither to reduce flat gradients/banding
       const ditherAlpha = 0.016 + humidity * 0.01;
