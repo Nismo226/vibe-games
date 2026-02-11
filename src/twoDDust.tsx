@@ -21,6 +21,7 @@ const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
 const MAX_DIRT = 50;
+const GAME_VERSION = "v0.1.0";
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -112,7 +113,7 @@ export const Dust = () => {
     jumpQueued: false,
     toolId: -1,
     toolMode: "none" as "none" | "suck" | "drop",
-    lastToolTapMs: 0,
+    toolToggle: "suck" as "suck" | "drop",
   });
   const lastRef = useRef(0);
   const rafRef = useRef<number | null>(null);
@@ -265,6 +266,21 @@ export const Dust = () => {
       const ctx = ensureAudio();
       if (ctx && ctx.state === "suspended") ctx.resume();
 
+      const toggleW = 132;
+      const toggleH = 44;
+      const toggleX = canvasEl.width - toggleW - 16;
+      const toggleY = canvasEl.height - toggleH - 16;
+      const onToggle = e.clientX >= toggleX && e.clientX <= toggleX + toggleW && e.clientY >= toggleY && e.clientY <= toggleY + toggleH;
+
+      if (onToggle) {
+        const mobile = mobileRef.current;
+        mobile.toolToggle = mobile.toolToggle === "suck" ? "drop" : "suck";
+        mouseRef.current.left = false;
+        mouseRef.current.right = false;
+        if (e.pointerType !== "mouse") e.preventDefault();
+        return;
+      }
+
       if (e.pointerType === "mouse") {
         if (e.button === 0) mouseRef.current.left = true;
         if (e.button === 2) mouseRef.current.right = true;
@@ -284,10 +300,8 @@ export const Dust = () => {
       }
 
       if (mobile.toolId === -1) {
-        const now = performance.now();
-        const doubleTap = now - mobile.lastToolTapMs < 290;
         mobile.toolId = e.pointerId;
-        mobile.toolMode = doubleTap ? "drop" : "suck";
+        mobile.toolMode = mobile.toolToggle;
         mouseRef.current.left = mobile.toolMode === "suck";
         mouseRef.current.right = mobile.toolMode === "drop";
       }
@@ -310,7 +324,6 @@ export const Dust = () => {
       if (e.pointerId === mobile.toolId) {
         mobile.toolId = -1;
         mobile.toolMode = "none";
-        mobile.lastToolTapMs = performance.now();
         mouseRef.current.left = false;
         mouseRef.current.right = false;
       }
@@ -977,11 +990,30 @@ export const Dust = () => {
 
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
-      ctx.fillText("2D Dust Prototype - Level 1: Tsunami Warning", 28, 38);
+      ctx.fillText(`2D Dust Prototype ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 60);
       ctx.fillText(objective, 28, 82);
-      ctx.fillText("Mouse: L Suck / R Drop | Touch: Bottom-half drag=move/flick jump | Tap+hold suck | Double-tap+hold drop", 28, 104);
+      ctx.fillText("Mouse: L Suck / R Drop | Touch: Bottom-half drag=move/flick jump | Use bottom-right toggle for Grab/Place", 28, 104);
+
+      // mobile tool toggle (bottom-right)
+      const mobile = mobileRef.current;
+      const toggleW = 132;
+      const toggleH = 44;
+      const toggleX = canvasEl.width - toggleW - 16;
+      const toggleY = canvasEl.height - toggleH - 16;
+
+      ctx.fillStyle = "rgba(9,17,30,0.82)";
+      ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
+      ctx.strokeStyle = "rgba(186,218,255,0.45)";
+      ctx.strokeRect(toggleX, toggleY, toggleW, toggleH);
+
+      const grabActive = mobile.toolToggle === "suck";
+      ctx.fillStyle = grabActive ? "rgba(95,196,255,0.32)" : "rgba(255,183,120,0.22)";
+      ctx.fillRect(toggleX + 4, toggleY + 4, toggleW - 8, toggleH - 8);
+      ctx.fillStyle = "#e8f5ff";
+      ctx.font = "bold 14px system-ui";
+      ctx.fillText(grabActive ? "Mode: GRAB" : "Mode: PLACE", toggleX + 16, toggleY + 28);
 
       // subtle film grain
       const t = performance.now() * 0.001;
