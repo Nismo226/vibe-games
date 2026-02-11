@@ -1162,6 +1162,9 @@ export const Dust = () => {
       const filmGrainAmount = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.006;
       const uiGlassAlpha = 0.2 + uiCalm * 0.16;
       const horizonGlow = 0.05 + (1 - stormMood) * 0.08;
+      const wetLens = clamp01(humidity * 0.7 + waveVisualIntensity * 0.45);
+      const airGlow = clamp01((1 - stormMood) * 0.75 + sunsetWarmth * 0.2);
+      const uiHighlight = 0.2 + uiCalm * 0.3;
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1330,6 +1333,12 @@ export const Dust = () => {
             ctx.fillStyle = duneShadow;
             ctx.fillRect(sx, sy, CELL, CELL);
 
+            const anisotropic = Math.sin(now * 0.0016 + x * 1.4 + y * 0.22) * 0.5 + 0.5;
+            if (anisotropic > 0.46) {
+              ctx.fillStyle = `rgba(255, 228, 176, ${0.03 + anisotropic * 0.06 + airGlow * 0.04})`;
+              ctx.fillRect(sx + 2, sy + 2 + ((x + y) % 2), CELL - 4, 1);
+            }
+
             // subsurface-ish warm scatter near lit top edges
             if (topAir) {
               const sss = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
@@ -1420,6 +1429,12 @@ export const Dust = () => {
                 ctx.fillStyle = "rgba(214, 238, 248, 0.14)";
                 ctx.fillRect(sx + 1, sy, CELL - 2, 1);
               }
+
+              const capillary = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+              capillary.addColorStop(0, "rgba(162, 210, 234, 0.06)");
+              capillary.addColorStop(1, "rgba(38, 62, 84, 0.2)");
+              ctx.fillStyle = capillary;
+              ctx.fillRect(sx, sy + CELL - 3, CELL, 3);
             }
           } else if (c === 3) {
             const t = performance.now() * 0.003;
@@ -1505,6 +1520,12 @@ export const Dust = () => {
             lateralScatter.addColorStop(1, "rgba(28, 88, 152, 0)");
             ctx.fillStyle = lateralScatter;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const forwardScatter = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+            forwardScatter.addColorStop(0, `rgba(210, 246, 255, ${0.03 + airGlow * 0.05 + (topAir ? 0.06 : 0.02)})`);
+            forwardScatter.addColorStop(1, `rgba(20, 74, 132, ${0.05 + localDepth * 0.015})`);
+            ctx.fillStyle = forwardScatter;
+            ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
 
             const screenReflect = Math.sin(now * 0.0025 + (sx + sy) * 0.03) * 0.5 + 0.5;
             if (screenReflect > 0.58) {
@@ -1807,6 +1828,21 @@ export const Dust = () => {
         ctx.fillStyle = `rgba(60,132,210,${floodTint})`;
         ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
+        const lensDrops = Math.floor(8 + wetLens * 22);
+        for (let i = 0; i < lensDrops; i++) {
+          const lx = ((i * 149.3 + now * (0.012 + (i % 5) * 0.004)) % (canvasEl.width + 90)) - 45;
+          const ly = ((i * 97.7 + now * (0.02 + (i % 4) * 0.007)) % (canvasEl.height + 120)) - 60;
+          const r = 7 + (i % 4) * 2.6;
+          const drop = ctx.createRadialGradient(lx, ly, 1, lx, ly, r);
+          drop.addColorStop(0, `rgba(224, 246, 255, ${0.07 + wetLens * 0.15})`);
+          drop.addColorStop(0.55, `rgba(120, 186, 236, ${0.05 + wetLens * 0.1})`);
+          drop.addColorStop(1, "rgba(24, 56, 94, 0)");
+          ctx.fillStyle = drop;
+          ctx.beginPath();
+          ctx.arc(lx, ly, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
         // lensy water refraction pass during impact
         const ripple = 0.6 + Math.sin(now * 0.004) * 0.4;
         ctx.strokeStyle = `rgba(196, 234, 255, ${0.05 + waveVisualIntensity * 0.08})`;
@@ -2100,11 +2136,11 @@ export const Dust = () => {
       const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.14})`);
-      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.08})`);
-      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.04})`);
+      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.12})`);
+      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.06})`);
+      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.02})`);
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
-      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.14)");
+      hudGlow.addColorStop(0, `rgba(146, 210, 255, ${0.08 + uiHighlight * 0.12})`);
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
       ctx.fillStyle = "rgba(0,0,0,0.14)";
       ctx.fillRect(18, 18, hudW, hudH);
@@ -2289,6 +2325,19 @@ export const Dust = () => {
       ctx.fillRect(0, 0, 2, canvasEl.height);
       ctx.fillStyle = `rgba(255, 136, 124, ${aberration * 0.9})`;
       ctx.fillRect(canvasEl.width - 2, 0, 2, canvasEl.height);
+
+      const halation = ctx.createRadialGradient(
+        canvasEl.width * 0.46,
+        canvasEl.height * 0.32,
+        16,
+        canvasEl.width * 0.46,
+        canvasEl.height * 0.32,
+        Math.max(canvasEl.width, canvasEl.height) * 0.6,
+      );
+      halation.addColorStop(0, `rgba(255, 220, 172, ${0.03 + airGlow * 0.05})`);
+      halation.addColorStop(1, "rgba(255, 220, 172, 0)");
+      ctx.fillStyle = halation;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // subtle film grain + chroma jitter
       const t = performance.now() * 0.001;
