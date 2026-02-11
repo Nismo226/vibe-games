@@ -374,15 +374,25 @@ export const Dust = () => {
       }
     }
 
-    function tribeBarrierStrength() {
+    function getBarrierPlan() {
       const tribe = tribeRef.current;
       const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
       const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
+      return {
+        x0: tcx + 1,
+        x1: tcx + 5,
+        y0: tcy - 5,
+        y1: tcy + 2,
+      };
+    }
+
+    function tribeBarrierStrength() {
+      const plan = getBarrierPlan();
       let score = 0;
 
       // count dirt blocks in front-right of tribe as "barrier"
-      for (let x = tcx + 1; x <= tcx + 5; x++) {
-        for (let y = tcy - 5; y <= tcy + 2; y++) {
+      for (let x = plan.x0; x <= plan.x1; x++) {
+        for (let y = plan.y0; y <= plan.y1; y++) {
           if (inBounds(x, y) && getCell(x, y) === 1) score++;
         }
       }
@@ -871,6 +881,8 @@ export const Dust = () => {
       const barrier = tribeBarrierStrength();
       const barrierPct = Math.max(0, Math.min(1, barrier / BARRIER_GOAL));
       const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
+      const barrierPlan = getBarrierPlan();
+      const barrierMissing = Math.max(0, BARRIER_GOAL - barrier);
 
       // objective beacon + off-screen compass for tribe
       const tribeCenterWX = tribe.x + tribe.w * 0.5;
@@ -954,6 +966,33 @@ export const Dust = () => {
         ctx.fillStyle = "#d7ecff";
         ctx.font = "13px system-ui";
         ctx.fillText("Tribe ahead → Find and talk", tx - 46, ty - 20);
+      }
+
+      if (quest.state === "countdown" || quest.state === "wave") {
+        const pulse = 0.45 + Math.sin(performance.now() * 0.004) * 0.2;
+        for (let y = barrierPlan.y0; y <= barrierPlan.y1; y++) {
+          for (let x = barrierPlan.x0; x <= barrierPlan.x1; x++) {
+            if (!inBounds(x, y)) continue;
+            const sx = x * CELL - camX;
+            const sy = y * CELL - camY;
+            const c = getCell(x, y);
+
+            if (c === 1) {
+              ctx.fillStyle = "rgba(86,213,143,0.24)";
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+              ctx.strokeStyle = "rgba(122,235,168,0.55)";
+            } else if (c === 3) {
+              ctx.fillStyle = "rgba(120,180,255,0.18)";
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+              ctx.strokeStyle = "rgba(170,215,255,0.45)";
+            } else {
+              ctx.strokeStyle = `rgba(255, 203, 122, ${0.25 + pulse * 0.45})`;
+            }
+
+            ctx.lineWidth = 1.25;
+            ctx.strokeRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+          }
+        }
       }
 
       if (quest.state === "dialog") {
@@ -1107,7 +1146,7 @@ export const Dust = () => {
         ctx.stroke();
         ctx.fillStyle = "#d8eeff";
         ctx.font = "12px system-ui";
-        ctx.fillText(`Barrier: ${barrier}/${BARRIER_GOAL} (${barrierLabel})`, meterX + meterW + 12, meterY + 9);
+        ctx.fillText(`Barrier: ${barrier}/${BARRIER_GOAL} (${barrierLabel})${barrierMissing > 0 ? ` · Need ${barrierMissing}` : ""}`, meterX + meterW + 12, meterY + 9);
       }
 
       if (!compactHud) {
