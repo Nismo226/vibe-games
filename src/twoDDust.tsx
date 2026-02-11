@@ -1224,6 +1224,37 @@ export const Dust = () => {
       ctx.closePath();
       ctx.fill();
 
+      const chestPlate = ctx.createLinearGradient(x + 3, y + 6.5, x + 9.7, y + 13.2);
+      chestPlate.addColorStop(0, "rgba(250, 236, 216, 0.2)");
+      chestPlate.addColorStop(0.5, "rgba(196, 168, 134, 0.08)");
+      chestPlate.addColorStop(1, "rgba(38, 24, 18, 0.26)");
+      ctx.fillStyle = chestPlate;
+      ctx.beginPath();
+      ctx.moveTo(x + 3.0, y + 6.8 + breath * 0.3);
+      ctx.lineTo(x + 9.2, y + 6.9 + breath * 0.2);
+      ctx.lineTo(x + 8.9, y + 12.9 + hipShift * 0.2);
+      ctx.lineTo(x + 3.2, y + 12.7 + hipShift * 0.15);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(255, 232, 206, ${0.16 + panicAmp * 0.16})`;
+      ctx.lineWidth = 0.95;
+      ctx.beginPath();
+      ctx.moveTo(x + 3.5, y + 8.2 + breath * 0.3);
+      ctx.quadraticCurveTo(x + 6.1 + clothFlicker * 0.1, y + 9.1 + breath * 0.25, x + 8.9, y + 8.4 + breath * 0.2);
+      ctx.moveTo(x + 3.3, y + 10.0 + breath * 0.25);
+      ctx.quadraticCurveTo(x + 6.0, y + 10.9 + breath * 0.15, x + 8.7, y + 10.1);
+      ctx.stroke();
+
+      const sashSwing = Math.sin(phase * (mood === "panic" ? 14.8 : 8.4) + facing * 0.6) * (1 + panicAmp * 0.9);
+      ctx.fillStyle = `rgba(255, 210, 168, ${0.09 + panicAmp * 0.12})`;
+      ctx.beginPath();
+      ctx.moveTo(x + 7.9, y + 11.2);
+      ctx.quadraticCurveTo(x + 10.2 + sashSwing * 0.45, y + 12.2, x + 10.9 + sashSwing, y + 14.6 + panicAmp * 0.6);
+      ctx.quadraticCurveTo(x + 9.4 + sashSwing * 0.25, y + 13.9, x + 8.0, y + 13.1);
+      ctx.closePath();
+      ctx.fill();
+
       ctx.fillStyle = "rgba(255,255,255,0.13)";
       ctx.fillRect(x + 2.15, shoulderY + breath * 0.45, 7.9, 1.5);
       ctx.fillStyle = "rgba(18, 26, 42, 0.4)";
@@ -1251,6 +1282,19 @@ export const Dust = () => {
       ctx.moveTo(x + 3.1, y + 9.2);
       ctx.quadraticCurveTo(x + 1.2 - clothFlicker * 0.45, y + 10.2, x + 0.7 - clothFlicker * 0.9, y + 11.5 + panicAmp * 0.35);
       ctx.lineTo(x + 2.2, y + 11.2);
+      ctx.closePath();
+      ctx.fill();
+
+      const capeSwing = Math.sin(phase * (mood === "panic" ? 16 : mood === "run" ? 11 : 6.2) + facing * 0.8) * (1 + panicAmp * 1.2);
+      const capeDrop = mood === "panic" ? 1.3 : mood === "run" ? 0.8 : 0.4;
+      const cape = ctx.createLinearGradient(x + 2.8, y + 7.8, x - 2.8, y + 16.2 + capeDrop);
+      cape.addColorStop(0, `rgba(120, 84, 66, ${0.16 + panicAmp * 0.1})`);
+      cape.addColorStop(1, `rgba(28, 18, 14, ${0.34 + panicAmp * 0.16})`);
+      ctx.fillStyle = cape;
+      ctx.beginPath();
+      ctx.moveTo(x + 3.0, y + 7.9);
+      ctx.quadraticCurveTo(x + 0.8 - capeSwing * 0.55, y + 10.9 + capeDrop * 0.5, x - 0.9 - capeSwing, y + 14.8 + capeDrop);
+      ctx.quadraticCurveTo(x + 1.2 - capeSwing * 0.2, y + 14.2 + capeDrop * 0.2, x + 3.4, y + 11.0 + capeDrop * 0.2);
       ctx.closePath();
       ctx.fill();
 
@@ -2587,29 +2631,72 @@ export const Dust = () => {
           const fy = f.y - camY;
           const speed = Math.min(1, Math.abs(f.vy) / 680);
           const wob = Math.sin(tFall * 2 + i * 0.9) * (0.45 + speed * 0.65);
+          const squash = 1 + speed * 0.38 + Math.sin(tFall * 3.2 + i * 1.4) * 0.12;
+          const stretch = 1 - speed * 0.2 + Math.cos(tFall * 2.6 + i * 1.1) * 0.1;
 
-          const clump = ctx.createRadialGradient(fx - 1.2, fy - 1.4, 0.5, fx, fy, 5.8);
-          clump.addColorStop(0, `rgba(236, 192, 132, ${0.55 + speed * 0.18})`);
-          clump.addColorStop(0.6, `rgba(164, 118, 72, ${0.85 + speed * 0.1})`);
-          clump.addColorStop(1, "rgba(76, 52, 30, 0.22)");
+          const clump = ctx.createRadialGradient(fx - 1.2, fy - 1.4, 0.5, fx, fy, 7.4);
+          clump.addColorStop(0, `rgba(248, 206, 148, ${0.58 + speed * 0.2})`);
+          clump.addColorStop(0.58, `rgba(172, 124, 76, ${0.88 + speed * 0.08})`);
+          clump.addColorStop(1, "rgba(68, 44, 26, 0.26)");
           ctx.fillStyle = clump;
           ctx.beginPath();
-          ctx.ellipse(fx + wob * 0.35, fy, 3.2 + speed * 1.2, 2.6 - speed * 0.45, wob * 0.35, 0, Math.PI * 2);
+          ctx.ellipse(fx + wob * 0.35, fy, (3.5 + speed * 1.5) * squash, (2.4 - speed * 0.35) * stretch, wob * 0.45, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.fillStyle = `rgba(252, 226, 184, ${0.14 + speed * 0.1})`;
-          ctx.beginPath();
-          ctx.ellipse(fx - 0.8, fy - 0.9, 1.25, 0.8, wob * 0.25, 0, Math.PI * 2);
-          ctx.fill();
-
-          if (speed > 0.2) {
-            const tailLen = 4 + speed * 10;
-            ctx.strokeStyle = `rgba(214, 170, 122, ${0.09 + speed * 0.18})`;
-            ctx.lineWidth = 1.1;
+          const ridgeCount = 3;
+          ctx.strokeStyle = `rgba(255, 224, 176, ${0.08 + speed * 0.14})`;
+          ctx.lineWidth = 1;
+          for (let r = 0; r < ridgeCount; r++) {
+            const rf = r / (ridgeCount - 1 || 1);
             ctx.beginPath();
-            ctx.moveTo(fx - wob * 0.45, fy + 0.2);
-            ctx.quadraticCurveTo(fx - wob * 1.4, fy - tailLen * 0.35, fx + wob * 0.25, fy - tailLen);
+            ctx.ellipse(
+              fx + wob * (0.2 + rf * 0.3),
+              fy - 0.4 + rf * 0.7,
+              1.2 + rf * 2.1 + speed * 0.8,
+              0.45 + rf * 0.35,
+              wob * 0.4,
+              0,
+              Math.PI * 2,
+            );
             ctx.stroke();
+          }
+
+          ctx.fillStyle = `rgba(252, 232, 196, ${0.16 + speed * 0.12})`;
+          ctx.beginPath();
+          ctx.ellipse(fx - 1.0, fy - 1.1, 1.4, 0.85, wob * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+
+          const chunkSwirl = 4 + Math.floor(speed * 5);
+          for (let c = 0; c < chunkSwirl; c++) {
+            const af = c / chunkSwirl;
+            const a = tFall * (2.2 + speed * 2.1) + af * Math.PI * 2 + i * 0.5;
+            const rr = 3.8 + speed * 5.2 + Math.sin(tFall * 2.9 + c * 0.8) * 1.1;
+            const cx = fx + Math.cos(a) * rr;
+            const cy = fy + Math.sin(a * 1.35) * rr * 0.65;
+            const cs = 0.7 + (c % 3) * 0.45 + speed * 0.7;
+            ctx.fillStyle = `rgba(${188 + (c % 2) * 24}, ${140 + (c % 3) * 12}, ${88 + (c % 2) * 10}, ${0.24 + speed * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(cx, cy, cs, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          if (speed > 0.12) {
+            const trailLayers = 3;
+            for (let tLayer = 0; tLayer < trailLayers; tLayer++) {
+              const tf = tLayer / (trailLayers - 1 || 1);
+              const tailLen = 6 + speed * 14 + tf * 8;
+              ctx.strokeStyle = `rgba(214, 170, 122, ${0.07 + speed * 0.16 - tf * 0.02})`;
+              ctx.lineWidth = 1.3 - tf * 0.3;
+              ctx.beginPath();
+              ctx.moveTo(fx - wob * (0.45 + tf * 0.2), fy + 0.1 + tf * 0.3);
+              ctx.quadraticCurveTo(
+                fx - wob * (1.8 + tf * 0.8),
+                fy - tailLen * (0.35 + tf * 0.08),
+                fx + wob * (0.2 + tf * 0.3),
+                fy - tailLen,
+              );
+              ctx.stroke();
+            }
           }
         }
       }
@@ -2675,6 +2762,45 @@ export const Dust = () => {
           ctx.beginPath();
           ctx.ellipse(txTrail, tyTrail, tr, tr * 0.66, tBlob * 0.24 + tt * 0.65, 0, Math.PI * 2);
           ctx.fill();
+        }
+
+        const meshBands = 5;
+        for (let m = 0; m < meshBands; m++) {
+          const mf = m / (meshBands - 1 || 1);
+          const bandR = visibleBlob * (0.7 + mf * 0.65 + pulse * 0.24);
+          ctx.strokeStyle = `rgba(242, 206, 158, ${0.07 + (1 - mf) * 0.1 + pulse * 0.12})`;
+          ctx.lineWidth = 1.1 - mf * 0.4;
+          ctx.beginPath();
+          const segments = 20;
+          for (let s = 0; s <= segments; s++) {
+            const sf = s / segments;
+            const a = sf * Math.PI * 2 + tBlob * (0.9 + mf * 0.6);
+            const deform = 1 + Math.sin(a * (2.4 + mf * 0.8) + tBlob * 1.6) * (0.08 + pulse * 0.16);
+            const pxMesh = bx + Math.cos(a) * bandR * deform;
+            const pyMesh = by + Math.sin(a * 1.25) * bandR * (0.58 + mf * 0.18) * deform;
+            if (s === 0) ctx.moveTo(pxMesh, pyMesh);
+            else ctx.lineTo(pxMesh, pyMesh);
+          }
+          ctx.stroke();
+        }
+
+        const vortexRibbons = 3 + Math.floor(Math.min(1, visibleBlob / 18) * 3);
+        for (let v = 0; v < vortexRibbons; v++) {
+          const vf = v / Math.max(1, vortexRibbons - 1);
+          ctx.strokeStyle = `rgba(${252 - v * 16}, ${214 - v * 14}, ${170 - v * 10}, ${0.06 + pulse * 0.13 + (1 - vf) * 0.07})`;
+          ctx.lineWidth = 1.4 - vf * 0.45;
+          ctx.beginPath();
+          const points = 24;
+          for (let pIdx = 0; pIdx <= points; pIdx++) {
+            const pf = pIdx / points;
+            const a = pf * Math.PI * (2.2 + vf * 1.1) + tBlob * (1.8 + vf * 0.8);
+            const r = visibleBlob * (0.55 + pf * (1.4 + pulse * 0.9) + vf * 0.2);
+            const pxR = bx + Math.cos(a) * r;
+            const pyR = by + Math.sin(a * 1.32 + vf * 0.8) * r * 0.58;
+            if (pIdx === 0) ctx.moveTo(pxR, pyR);
+            else ctx.lineTo(pxR, pyR);
+          }
+          ctx.stroke();
         }
 
         ctx.fillStyle = `rgba(198, 154, 98, ${0.2 + pulse * 0.35 + velocityInfluence * 0.1})`;
@@ -2886,6 +3012,52 @@ export const Dust = () => {
         motionPhase + panicBlend,
         facing,
       );
+
+      if (mood === "idle") {
+        const idleBreath = 0.5 + Math.sin(now * 0.007) * 0.5;
+        ctx.strokeStyle = `rgba(214, 236, 255, ${0.05 + idleBreath * 0.08})`;
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 2; i++) {
+          const rr = 8 + i * 5 + idleBreath * (2 + i);
+          ctx.beginPath();
+          ctx.ellipse(px + player.w * 0.5, py + player.h * 0.52, rr * 0.82, rr, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      if (mood === "run") {
+        const speedStreaks = 4 + Math.floor(runBlend * 5);
+        ctx.strokeStyle = `rgba(198, 228, 255, ${0.06 + runBlend * 0.12})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < speedStreaks; i++) {
+          const sf = i / Math.max(1, speedStreaks - 1);
+          const sx0 = px + player.w * (0.18 + sf * 0.64);
+          const sy0 = py + player.h * (0.12 + sf * 0.72);
+          const sl = 10 + runBlend * 16;
+          const dir = player.vx >= 0 ? -1 : 1;
+          ctx.moveTo(sx0, sy0);
+          ctx.lineTo(sx0 + dir * sl, sy0 + Math.sin(now * 0.01 + i) * 1.7);
+        }
+        ctx.stroke();
+      }
+
+      if (mood === "panic") {
+        const panicSparkCount = 5 + Math.floor(panicBlend * 8);
+        for (let i = 0; i < panicSparkCount; i++) {
+          const a = now * 0.012 + i * 0.9;
+          const r = 7 + (i % 4) * 3 + panicBlend * 8;
+          const sx = px + player.w * 0.5 + Math.cos(a) * r;
+          const sy = py + player.h * 0.48 + Math.sin(a * 1.4) * r * 0.7;
+          const len = 2.2 + panicBlend * 4;
+          ctx.strokeStyle = `rgba(255, 216, 190, ${0.12 + panicBlend * 0.18})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + Math.cos(a + 0.4) * len, sy + Math.sin(a + 0.4) * len);
+          ctx.stroke();
+        }
+      }
 
       const heroRim = ctx.createRadialGradient(px + player.w * 0.5, py + player.h * 0.45, 2, px + player.w * 0.5, py + player.h * 0.45, 14);
       heroRim.addColorStop(0, `rgba(214, 236, 255, ${0.1 + runBlend * 0.08 + panicBlend * 0.08})`);
@@ -3306,6 +3478,40 @@ export const Dust = () => {
       ctx.fillStyle = `rgba(4, 8, 14, ${0.16 + stormMood * 0.12 + cameraPresentation * 0.07})`;
       ctx.fillRect(0, 0, canvasEl.width, letterbox);
       ctx.fillRect(0, canvasEl.height - letterbox, canvasEl.width, letterbox);
+
+      const actionIntensity = clamp01(speedBlur * 0.6 + waveVisualIntensity * 0.7 + impactPulse * 0.45);
+      if (actionIntensity > 0.08) {
+        const streakPasses = 2;
+        for (let pass = 0; pass < streakPasses; pass++) {
+          const pf = pass / (streakPasses - 1 || 1);
+          ctx.strokeStyle = `rgba(${198 + pass * 22}, ${228 + pass * 14}, 255, ${0.03 + actionIntensity * 0.08 - pf * 0.01})`;
+          ctx.lineWidth = 1.1 - pf * 0.3;
+          ctx.beginPath();
+          const bands = 16 + Math.floor(actionIntensity * 24);
+          for (let i = 0; i < bands; i++) {
+            const y = (i / bands) * canvasEl.height;
+            const wave = Math.sin(now * (0.0024 + pf * 0.0014) + y * 0.05 + i * 0.3) * (2 + actionIntensity * 7 + pf * 3);
+            const skew = (player.vx * 0.02 + player.vy * 0.008) * (0.2 + pf * 0.4);
+            ctx.moveTo(wave + skew, y);
+            ctx.lineTo(canvasEl.width + wave - skew, y + Math.sin(now * 0.003 + i) * (0.4 + actionIntensity * 1.6));
+          }
+          ctx.stroke();
+        }
+
+        const impactVeil = ctx.createRadialGradient(
+          canvasEl.width * 0.52,
+          canvasEl.height * 0.52,
+          26,
+          canvasEl.width * 0.52,
+          canvasEl.height * 0.52,
+          Math.max(canvasEl.width, canvasEl.height) * 0.72,
+        );
+        impactVeil.addColorStop(0, `rgba(224, 246, 255, ${0.02 + actionIntensity * 0.05})`);
+        impactVeil.addColorStop(0.58, `rgba(156, 206, 255, ${0.02 + actionIntensity * 0.04})`);
+        impactVeil.addColorStop(1, "rgba(18, 42, 82, 0)");
+        ctx.fillStyle = impactVeil;
+        ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+      }
 
       // lightweight post stack: bloom-ish lift + edge softness
       const highlightWash = ctx.createRadialGradient(
