@@ -872,10 +872,62 @@ export const Dust = () => {
       const barrierPct = Math.max(0, Math.min(1, barrier / BARRIER_GOAL));
       const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
 
+      // objective beacon + off-screen compass for tribe
+      const tribeCenterWX = tribe.x + tribe.w * 0.5;
+      const tribeCenterWY = tribe.y + tribe.h * 0.5;
+      const tribeScreenX = tribeCenterWX - camX;
+      const tribeScreenY = tribeCenterWY - camY;
+      const edgePad = 26;
+      const offscreen =
+        tribeScreenX < edgePad ||
+        tribeScreenX > canvasEl.width - edgePad ||
+        tribeScreenY < edgePad ||
+        tribeScreenY > canvasEl.height - edgePad;
+      const distCells = Math.floor(Math.hypot(tribeCenterWX - (player.x + player.w * 0.5), tribeCenterWY - (player.y + player.h * 0.5)) / CELL);
+
+      if (offscreen && (quest.state === "explore" || quest.state === "dialog" || quest.state === "countdown" || quest.state === "wave")) {
+        const dxToTribe = tribeScreenX - canvasEl.width * 0.5;
+        const dyToTribe = tribeScreenY - canvasEl.height * 0.5;
+        const ang = Math.atan2(dyToTribe, dxToTribe);
+        const maxRX = canvasEl.width * 0.5 - edgePad;
+        const maxRY = canvasEl.height * 0.5 - edgePad;
+        const tEdge = 1 / Math.max(Math.abs(Math.cos(ang)) / maxRX, Math.abs(Math.sin(ang)) / maxRY);
+        const ix = canvasEl.width * 0.5 + Math.cos(ang) * tEdge;
+        const iy = canvasEl.height * 0.5 + Math.sin(ang) * tEdge;
+
+        ctx.save();
+        ctx.translate(ix, iy);
+        ctx.rotate(ang);
+        ctx.fillStyle = "rgba(156, 221, 255, 0.92)";
+        ctx.beginPath();
+        ctx.moveTo(14, 0);
+        ctx.lineTo(-12, -9);
+        ctx.lineTo(-12, 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = "rgba(8, 18, 34, 0.82)";
+        ctx.fillRect(ix - 44, iy + 12, 88, 20);
+        ctx.strokeStyle = "rgba(170, 220, 255, 0.65)";
+        ctx.strokeRect(ix - 44, iy + 12, 88, 20);
+        ctx.fillStyle = "#d9f1ff";
+        ctx.font = "12px system-ui";
+        ctx.fillText(`${distCells}m → tribe`, ix - 36, iy + 26);
+      }
+
       // tribe character (first rescue target)
       const tx = tribe.x - camX;
       const tribeBob = Math.sin(performance.now() * 0.005) * 1.5;
       const ty = tribe.y - camY + tribeBob;
+
+      const beaconPulse = 0.35 + Math.sin(performance.now() * 0.004) * 0.12;
+      const beacon = ctx.createLinearGradient(tribeScreenX, 0, tribeScreenX, ty + 8);
+      beacon.addColorStop(0, `rgba(154, 228, 255, ${0.16 + beaconPulse * 0.22})`);
+      beacon.addColorStop(1, "rgba(154, 228, 255, 0)");
+      ctx.fillStyle = beacon;
+      ctx.fillRect(tribeScreenX - 14, 0, 28, Math.max(0, ty + 8));
+
       ctx.fillStyle = "#ffd08a";
       ctx.fillRect(tx + 3, ty, 6, 6);
       ctx.fillStyle = "#8f4f2a";
