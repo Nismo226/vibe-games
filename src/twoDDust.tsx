@@ -1197,6 +1197,10 @@ export const Dust = () => {
       const gradeTemp = lerp(0.92, 1.08, clamp01((1 - stormMood) * 0.7 + goldenHour * 0.3));
       const hazeDrift = Math.sin(now * 0.00042) * 0.5 + 0.5;
       const uiFrost = clamp01(0.2 + uiCalm * 0.3 + (1 - stormMood) * 0.15);
+      const stormDesaturation = clamp01(stormMood * 0.58 + waveVisualIntensity * 0.34);
+      const sandAnisotropy = clamp01(0.3 + (1 - humidity) * 0.52 + goldenHour * 0.24);
+      const waterRefractionStrength = clamp01(0.2 + waveVisualIntensity * 0.62 + humidity * 0.26);
+      const cameraPresentation = clamp01(0.34 + cinematicFocus * 0.42 + waveVisualIntensity * 0.2);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1214,9 +1218,9 @@ export const Dust = () => {
       // background
       const dayToStorm = Math.min(1, stormMood * 0.9 + waveVisualIntensity * 0.5);
       const heatHueShift = Math.sin(now * 0.00017) * 0.5 + 0.5;
-      const skyTop = `rgba(${8 + Math.floor(dayToStorm * 15)}, ${20 + Math.floor(dayToStorm * 13)}, ${50 + Math.floor(dayToStorm * 22)}, 1)`;
-      const skyMid = `rgba(${34 + Math.floor(dayToStorm * 12 + sunsetWarmth * 13)}, ${76 + Math.floor(dayToStorm * 9 + sunsetWarmth * 11)}, ${122 + Math.floor(dayToStorm * 14)}, 1)`;
-      const skyBottom = `rgba(${66 + Math.floor(dayToStorm * 10 + heatHueShift * 10 + sunsetWarmth * 19)}, ${110 + Math.floor(dayToStorm * 7 + heatHueShift * 8)}, ${124 + Math.floor(dayToStorm * 8)}, 1)`;
+      const skyTop = `rgba(${10 + Math.floor(dayToStorm * 14 + stormDesaturation * 6)}, ${22 + Math.floor(dayToStorm * 10 + stormDesaturation * 4)}, ${52 + Math.floor(dayToStorm * 20 + stormDesaturation * 8)}, 1)`;
+      const skyMid = `rgba(${34 + Math.floor(dayToStorm * 10 + sunsetWarmth * 12 + atmosphereTint.r * 0.04)}, ${78 + Math.floor(dayToStorm * 7 + sunsetWarmth * 9 + atmosphereTint.g * 0.02)}, ${126 + Math.floor(dayToStorm * 10 + atmosphereTint.b * 0.03)}, 1)`;
+      const skyBottom = `rgba(${68 + Math.floor(dayToStorm * 8 + heatHueShift * 8 + sunsetWarmth * 16)}, ${112 + Math.floor(dayToStorm * 6 + heatHueShift * 7)}, ${128 + Math.floor(dayToStorm * 7 - stormDesaturation * 5)}, 1)`;
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       bg.addColorStop(0, skyTop);
       bg.addColorStop(0.52, skyMid);
@@ -1418,8 +1422,8 @@ export const Dust = () => {
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const anisotropic = Math.sin(now * 0.0016 + x * 1.4 + y * 0.22) * 0.5 + 0.5;
-            if (anisotropic > 0.46) {
-              ctx.fillStyle = `rgba(255, 228, 176, ${0.03 + anisotropic * 0.06 + airGlow * 0.04})`;
+            if (anisotropic > 0.42) {
+              ctx.fillStyle = `rgba(255, 228, 176, ${0.02 + anisotropic * (0.04 + sandAnisotropy * 0.08) + airGlow * 0.03})`;
               ctx.fillRect(sx + 2, sy + 2 + ((x + y) % 2), CELL - 4, 1);
             }
 
@@ -1578,9 +1582,9 @@ export const Dust = () => {
             }
 
             const refractionBand = ctx.createLinearGradient(sx, sy, sx + CELL, sy);
-            refractionBand.addColorStop(0, "rgba(190, 238, 255, 0.06)");
-            refractionBand.addColorStop(0.5, `rgba(150, 214, 255, ${0.04 + wavelet * 0.08})`);
-            refractionBand.addColorStop(1, "rgba(28, 86, 158, 0.08)");
+            refractionBand.addColorStop(0, `rgba(190, 238, 255, ${0.03 + waterRefractionStrength * 0.08})`);
+            refractionBand.addColorStop(0.5, `rgba(150, 214, 255, ${0.03 + wavelet * 0.06 + waterRefractionStrength * 0.08})`);
+            refractionBand.addColorStop(1, `rgba(28, 86, 158, ${0.04 + waterRefractionStrength * 0.08})`);
             ctx.fillStyle = refractionBand;
             ctx.fillRect(sx, sy, CELL, CELL);
 
@@ -1732,6 +1736,20 @@ export const Dust = () => {
             const rock = 84 + Math.floor(n * 24);
             ctx.fillStyle = `rgb(${rock}, ${rock + 4}, ${rock + 10})`;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const weathering = Math.sin(now * 0.0008 + x * 0.8 + y * 0.2) * 0.5 + 0.5;
+            const nearWater = getCell(x + 1, y) === 3 || getCell(x - 1, y) === 3 || getCell(x, y + 1) === 3 || getCell(x, y - 1) === 3;
+            if (weathering > 0.4) {
+              ctx.fillStyle = `rgba(174, 182, 198, ${0.03 + weathering * 0.08})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
+            }
+            if (nearWater) {
+              const wetRock = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              wetRock.addColorStop(0, "rgba(126, 148, 176, 0.06)");
+              wetRock.addColorStop(1, "rgba(24, 38, 60, 0.24)");
+              ctx.fillStyle = wetRock;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             const rockGrad = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
             rockGrad.addColorStop(0, "rgba(176, 186, 205, 0.12)");
@@ -2498,8 +2516,8 @@ export const Dust = () => {
       ctx.fillText(grabActive ? "Mode: GRAB" : "Mode: PLACE", toggleX + 16, toggleY + 28);
 
       // lightweight cinematic framing (visual-only, non-intrusive)
-      const letterbox = Math.floor(4 + cinematicFocus * 6 + waveVisualIntensity * 8);
-      ctx.fillStyle = `rgba(4, 8, 14, ${0.2 + stormMood * 0.15})`;
+      const letterbox = Math.floor(3 + cameraPresentation * 7 + waveVisualIntensity * 8);
+      ctx.fillStyle = `rgba(4, 8, 14, ${0.16 + stormMood * 0.12 + cameraPresentation * 0.07})`;
       ctx.fillRect(0, 0, canvasEl.width, letterbox);
       ctx.fillRect(0, canvasEl.height - letterbox, canvasEl.width, letterbox);
 
@@ -2603,7 +2621,7 @@ export const Dust = () => {
       ctx.fillRect(0, canvasEl.height * 0.22, canvasEl.width, canvasEl.height * 0.2);
 
       // subtle film-gate flicker around frame to sell camera presentation
-      const gatePulse = 0.02 + Math.sin(now * 0.009) * 0.008 + cinematicFocus * 0.012;
+      const gatePulse = 0.016 + Math.sin(now * 0.009) * 0.007 + cameraPresentation * 0.014;
       ctx.fillStyle = `rgba(4, 8, 16, ${gatePulse})`;
       ctx.fillRect(0, 0, canvasEl.width, 2);
       ctx.fillRect(0, canvasEl.height - 2, canvasEl.width, 2);
