@@ -1737,16 +1737,42 @@ export function ArcBreaker() {
         }
       }
 
-      // status / powerup timers
-      ctx.fillStyle = "rgba(220,240,255,0.45)";
-      ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto";
-      const fx2 = effectsRef.current;
-      const bits: string[] = [];
-      if (fx2.dmgMs > 0) bits.push("DMG x2");
-      if (fx2.missilesMs > 0) bits.push("MISSILES");
-      if (fx2.laserMs > 0) bits.push("LASER");
-      if (fx2.wideMs > 0) bits.push("WIDE");
-      ctx.fillText(bits.join("  •  ") || "", layout.pad, layout.pad + 62);
+      // status / powerup timers (readable chips with countdown)
+      {
+        const fx2 = effectsRef.current;
+        const activeFx: Array<{ label: string; ms: number; accent: string }> = [];
+        if (fx2.dmgMs > 0) activeFx.push({ label: "DMG x2", ms: fx2.dmgMs, accent: "rgba(255,120,120,0.95)" });
+        if (fx2.missilesMs > 0) activeFx.push({ label: "MISSILES", ms: fx2.missilesMs, accent: "rgba(255,210,120,0.95)" });
+        if (fx2.laserMs > 0) activeFx.push({ label: "LASER", ms: fx2.laserMs, accent: "rgba(255,140,220,0.95)" });
+        if (fx2.wideMs > 0) activeFx.push({ label: "WIDE", ms: fx2.wideMs, accent: "rgba(120,240,255,0.95)" });
+        if (fx2.multiballMs > 0 && ballsRef.current.length > 1) activeFx.push({ label: "MULTIBALL", ms: fx2.multiballMs, accent: "rgba(180,170,255,0.95)" });
+
+        let chipY = layout.pad + 58;
+        for (const chip of activeFx) {
+          const secs = Math.max(0, Math.ceil(chip.ms / 1000));
+          const txt = `${chip.label} ${secs}s`;
+          ctx.font = "700 11px system-ui, -apple-system, Segoe UI, Roboto";
+          const tw = Math.ceil(ctx.measureText(txt).width);
+          const padX = 8;
+          const chipH = 18;
+          const chipW = tw + padX * 2;
+          const chipX = size.w - layout.pad - chipW;
+
+          ctx.fillStyle = "rgba(10,16,34,0.72)";
+          ctx.fillRect(chipX, chipY, chipW, chipH);
+          ctx.strokeStyle = "rgba(180,220,255,0.2)";
+          ctx.strokeRect(chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1);
+
+          // accent bar improves quick parsing while moving
+          ctx.fillStyle = chip.accent;
+          ctx.fillRect(chipX, chipY, 3, chipH);
+
+          ctx.fillStyle = "rgba(235,245,255,0.9)";
+          ctx.fillText(txt, chipX + padX, chipY + 12.5);
+
+          chipY += chipH + 5;
+        }
+      }
 
       // control zone hint
       ctx.fillStyle = "rgba(120,180,255,0.06)";
