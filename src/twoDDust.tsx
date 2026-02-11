@@ -553,6 +553,30 @@ export const Dust = () => {
       }
       return score;
     }
+    function tribeAirPocketScore() {
+      const tribe = tribeRef.current;
+      const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+      const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
+      let air = 0;
+      for (let x = tcx - 1; x <= tcx + 2; x++) {
+        for (let y = tcy - 2; y <= tcy + 1; y++) {
+          if (!inBounds(x, y)) continue;
+          if (getCell(x, y) === 0) air++;
+        }
+      }
+      return air;
+    }
+
+    function tribeEntombed() {
+      return tribeAirPocketScore() < 6;
+    }
+
+    function inTribeNoBuildZone(x: number, y: number) {
+      const tribe = tribeRef.current;
+      const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+      const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
+      return x >= tcx - 1 && x <= tcx + 2 && y >= tcy - 2 && y <= tcy + 1;
+    }
 
     function collidesRect(x: number, y: number, w: number, h: number) {
       const x0 = Math.floor(x / CELL);
@@ -735,7 +759,9 @@ export const Dust = () => {
             }
           }
 
-          if (inBounds(spawnX, spawnY) && getCell(spawnX, spawnY) === 0) {
+          const questNow = questRef.current;
+          const blockedNearTribe = (questNow.state === "countdown" || questNow.state === "wave") && inTribeNoBuildZone(spawnX, spawnY);
+          if (inBounds(spawnX, spawnY) && getCell(spawnX, spawnY) === 0 && !blockedNearTribe) {
             tool.falling.push({ x: spawnX * CELL + CELL * 0.5, y: spawnY * CELL + CELL * 0.5, vy: 0 });
             if (tool.falling.length > 220) tool.falling.splice(0, tool.falling.length - 220);
             setDirt((v) => Math.max(0, v - 1));
@@ -961,13 +987,22 @@ export const Dust = () => {
         }
 
         const barrier = tribeBarrierStrength();
+        const buried = tribeEntombed();
         const wavePassed = frontCell >= GRID_W - 2 && quest.waveTime > 5;
-        if (tribeWet && barrier < BARRIER_GOAL) {
+        if (buried) {
+          quest.state = "fail";
+          quest.resultText = "The tribe was buried. Keep an open safety pocket around them.";
+        } else if (tribeWet && barrier < BARRIER_GOAL) {
           quest.state = "fail";
           quest.resultText = "The wave broke through. Build a bigger wall and try again.";
         } else if (wavePassed) {
-          quest.state = "success";
-          quest.resultText = barrier >= BARRIER_GOAL ? "Barrier held! The tribe is safe." : "You survived this one, but stronger walls are safer.";
+          if (barrier >= BARRIER_GOAL && !buried) {
+            quest.state = "success";
+            quest.resultText = "Barrier held! The tribe is safe.";
+          } else {
+            quest.state = "fail";
+            quest.resultText = "Defense incomplete. Build the wave-facing barrier without burying the tribe.";
+          }
         }
       }
 
