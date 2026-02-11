@@ -1290,7 +1290,45 @@ export const Dust = () => {
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", toastX + 8, ty - 30);
       }
 
-      // removed barrier guidance overlays by request
+      // adaptive barrier blueprint overlay (countdown/wave): shows where protection is still missing
+      if (quest.state === "countdown" || quest.state === "wave") {
+        const plan = getBarrierPlan();
+        let missing = 0;
+
+        for (let x = plan.x0; x <= plan.x1; x++) {
+          for (let y = plan.y0; y <= plan.y1; y++) {
+            if (!inBounds(x, y)) continue;
+            const cell = getCell(x, y);
+            const sx = x * CELL - camX;
+            const sy = y * CELL - camY;
+            const filled = cell === 1;
+            if (!filled) missing++;
+
+            if (filled) {
+              ctx.fillStyle = "rgba(124, 214, 167, 0.2)";
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+            } else {
+              const pulse = 0.35 + Math.sin(performance.now() * 0.006 + x * 0.8 + y * 0.35) * 0.2;
+              ctx.fillStyle = `rgba(243, 138, 116, ${Math.max(0.14, pulse)})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+              ctx.strokeStyle = "rgba(255, 223, 205, 0.42)";
+              ctx.strokeRect(sx + 1.5, sy + 1.5, CELL - 3, CELL - 3);
+            }
+          }
+        }
+
+        const labelX = tribeScreenX - 92;
+        const labelY = ty - 52;
+        const labelW = 184;
+        const labelH = 24;
+        ctx.fillStyle = "rgba(16, 24, 36, 0.8)";
+        ctx.fillRect(labelX, labelY, labelW, labelH);
+        ctx.strokeStyle = "rgba(197, 224, 255, 0.42)";
+        ctx.strokeRect(labelX, labelY, labelW, labelH);
+        ctx.fillStyle = missing > 0 ? "#ffd5c9" : "#d1ffe5";
+        ctx.font = "12px system-ui";
+        ctx.fillText(missing > 0 ? `Barrier blueprint: fill ${missing} tiles` : "Barrier blueprint: complete", labelX + 8, labelY + 16);
+      }
 
       // removed legacy white wave overlays; keep only block-water visuals
 
