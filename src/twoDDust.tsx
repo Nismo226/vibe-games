@@ -83,7 +83,16 @@ export const Dust = () => {
 
   const keysRef = useRef<Record<string, boolean>>({});
   const mouseRef = useRef({ x: 0, y: 0, left: false, right: false });
-  const touchIdsRef = useRef<Set<number>>(new Set());
+  const mobileRef = useRef({
+    moveId: -1,
+    moveStartX: 0,
+    moveStartY: 0,
+    moveAxisX: 0,
+    jumpQueued: false,
+    toolId: -1,
+    toolMode: "none" as "none" | "suck" | "drop",
+    lastToolTapMs: 0,
+  });
   const lastRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const toolRef = useRef({
@@ -133,20 +142,17 @@ export const Dust = () => {
       if (e.pointerType === "mouse") {
         mouseRef.current.left = (e.buttons & 1) !== 0;
         mouseRef.current.right = (e.buttons & 2) !== 0;
+        return;
       }
-    }
 
-    function syncTouchToolState() {
-      const touches = touchIdsRef.current.size;
-      if (touches >= 2) {
-        mouseRef.current.left = false;
-        mouseRef.current.right = true; // two-finger hold = place
-      } else if (touches === 1) {
-        mouseRef.current.left = true; // one-finger hold = suck
-        mouseRef.current.right = false;
-      } else {
-        mouseRef.current.left = false;
-        mouseRef.current.right = false;
+      e.preventDefault();
+      const mobile = mobileRef.current;
+      if (e.pointerId === mobile.moveId) {
+        const dx = e.clientX - mobile.moveStartX;
+        mobile.moveAxisX = Math.max(-1, Math.min(1, dx / 42));
+        if (mobile.moveStartY - e.clientY > 34) {
+          mobile.jumpQueued = true;
+        }
       }
     }
 
@@ -160,8 +166,26 @@ export const Dust = () => {
         return;
       }
 
-      touchIdsRef.current.add(e.pointerId);
-      syncTouchToolState();
+      e.preventDefault();
+      const mobile = mobileRef.current;
+      const leftZone = e.clientX < canvasEl.width * 0.46;
+
+      if (leftZone && mobile.moveId === -1) {
+        mobile.moveId = e.pointerId;
+        mobile.moveStartX = e.clientX;
+        mobile.moveStartY = e.clientY;
+        mobile.moveAxisX = 0;
+        return;
+      }
+
+      if (mobile.toolId === -1) {
+        const now = performance.now();
+        const doubleTap = now - mobile.lastToolTapMs < 290;
+        mobile.toolId = e.pointerId;
+        mobile.toolMode = doubleTap ? "drop" : "suck";
+        mouseRef.current.left = mobile.toolMode === "suck";
+        mouseRef.current.right = mobile.toolMode === "drop";
+      }
     }
 
     function onPointerUp(e: PointerEvent) {
@@ -171,8 +195,20 @@ export const Dust = () => {
         return;
       }
 
-      touchIdsRef.current.delete(e.pointerId);
-      syncTouchToolState();
+      e.preventDefault();
+      const mobile = mobileRef.current;
+      if (e.pointerId === mobile.moveId) {
+        mobile.moveId = -1;
+        mobile.moveAxisX = 0;
+      }
+
+      if (e.pointerId === mobile.toolId) {
+        mobile.toolId = -1;
+        mobile.toolMode = "none";
+        mobile.lastToolTapMs = performance.now();
+        mouseRef.current.left = false;
+        mouseRef.current.right = false;
+      }
     }
 
     function worldToCell(px: number, py: number) {
@@ -336,19 +372,21 @@ export const Dust = () => {
     function update(dt: number) {
       const keys = keysRef.current;
 
-      // horizontal input
-      const left = keys["a"] || keys["arrowleft"];
-      const right = keys["d"] || keys["arrowright"];
+      // horizontal input (keyboard + mobile left-zone drag)
+      const mobile = mobileRef.current;
+      const left = keys["a"] || keys["arrowleft"] || mobile.moveAxisX < -0.18;
+      const right = keys["d"] || keys["arrowright"] || mobile.moveAxisX > 0.18;
       player.vx = 0;
-      if (left) player.vx = -MOVE_SPEED;
-      if (right) player.vx = MOVE_SPEED;
+      if (left) player.vx = -MOVE_SPEED * Math.max(0.6, Math.abs(mobile.moveAxisX) || 1);
+      if (right) player.vx = MOVE_SPEED * Math.max(0.6, Math.abs(mobile.moveAxisX) || 1);
 
-      // jump
-      const jump = keys["w"] || keys["arrowup"] || keys[" "];
+      // jump (keyboard + upward flick on left zone)
+      const jump = keys["w"] || keys["arrowup"] || keys[" "] || mobile.jumpQueued;
       if (jump && player.onGround) {
         player.vy = JUMP_VEL;
         player.onGround = false;
       }
+      mobile.jumpQueued = false;
 
       // gravity
       player.vy += GRAVITY * dt;
@@ -583,7 +621,7 @@ export const Dust = () => {
       ctx.fillText("2D Dust Prototype", 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}`, 28, 60);
-      ctx.fillText("A/D + W/Space | Mouse: L Suck / R Drop | Touch: 1 finger suck, 2 fingers drop", 28, 82);
+      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left side drag=move, flick up=jump, tap+hold=suck, double-tap+hold=drop", 28, 82);
 
       applyTools(camX, camY, dt);
     }
@@ -612,6 +650,9 @@ export const Dust = () => {
     const preventMenu = (e: Event) => e.preventDefault();
     canvasEl.addEventListener("contextmenu", preventMenu);
     canvasEl.style.touchAction = "none";
+    canvasEl.style.userSelect = "none";
+    (canvasEl.style as CSSStyleDeclaration & { webkitTouchCallout?: string }).webkitTouchCallout = "none";
+    document.body.style.overscrollBehavior = "none";
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -623,6 +664,7 @@ export const Dust = () => {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       canvasEl.removeEventListener("contextmenu", preventMenu);
+      document.body.style.overscrollBehavior = "";
     };
   }, []);
 
