@@ -26,7 +26,7 @@ const JUMP_VEL = -460;
 const COYOTE_TIME = 0.11;
 const JUMP_BUFFER_TIME = 0.12;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.4";
+const GAME_VERSION = "v0.1.5";
 const BARRIER_GOAL = 16;
 
 function idx(x: number, y: number) {
@@ -1129,6 +1129,7 @@ export const Dust = () => {
       const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
       const barrierMissing = Math.max(0, BARRIER_GOAL - barrier);
       const nearestGap = findNearestBarrierGap(player.x + player.w * 0.5, player.y + player.h * 0.5);
+      const barrierPlan = getBarrierPlan();
 
       // objective beacon + off-screen compass for tribe
       const tribeCenterWX = tribe.x + tribe.w * 0.5;
@@ -1224,7 +1225,31 @@ export const Dust = () => {
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", toastX + 8, ty - 30);
       }
 
-      // build guidance polish: show nearest missing wall slot and direction arrow
+      // build guidance polish: projected wall blueprint + nearest missing slot arrow
+      if (quest.state === "countdown" || quest.state === "wave") {
+        for (let by = barrierPlan.y0; by <= barrierPlan.y1; by++) {
+          for (let bx = barrierPlan.x0; bx <= barrierPlan.x1; bx++) {
+            if (!inBounds(bx, by)) continue;
+            const c = getCell(bx, by);
+            const sx = bx * CELL - camX;
+            const sy = by * CELL - camY;
+
+            if (c === 1) {
+              ctx.strokeStyle = "rgba(96, 232, 158, 0.38)";
+              ctx.lineWidth = 1;
+              ctx.strokeRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+            } else if (c === 0 || c === 3) {
+              const pulse = 0.2 + 0.18 * (1 + Math.sin(performance.now() * 0.008 + bx * 0.7 + by * 1.1));
+              ctx.fillStyle = `rgba(255, 210, 120, ${pulse})`;
+              ctx.fillRect(sx + 2, sy + 2, CELL - 4, CELL - 4);
+              ctx.strokeStyle = "rgba(255, 226, 152, 0.48)";
+              ctx.lineWidth = 1;
+              ctx.strokeRect(sx + 2, sy + 2, CELL - 4, CELL - 4);
+            }
+          }
+        }
+      }
+
       if ((quest.state === "countdown" || quest.state === "wave") && nearestGap) {
         const gapX = nearestGap.x * CELL + CELL * 0.5 - camX;
         const gapY = nearestGap.y * CELL + CELL * 0.5 - camY;
