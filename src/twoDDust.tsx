@@ -1163,8 +1163,9 @@ export const Dust = () => {
       const presentationZoom =
         1 +
         Math.sin(now * 0.00062) * 0.0025 +
-        Math.min(0.02, Math.abs(player.vx) / 5000) +
-        waveVisualIntensity * 0.014 -
+        Math.min(0.026, Math.abs(player.vx) / 4300) +
+        Math.min(0.009, Math.abs(player.vy) / 9000) +
+        waveVisualIntensity * 0.016 -
         humidity * 0.004;
       const sunsetWarmth = 0.32 + Math.sin(now * 0.00006) * 0.18 + (1 - stormMood) * 0.12;
       const atmosphereDensity = Math.min(1, 0.24 + humidity * 0.52 + waveVisualIntensity * 0.28);
@@ -1222,7 +1223,10 @@ export const Dust = () => {
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
       ctx.scale(presentationZoom, presentationZoom);
-      const cinematicRoll = cameraTilt * 0.0016 + Math.sin(now * 0.0007) * (0.0015 + waveVisualIntensity * 0.002);
+      const cinematicRoll =
+        cameraTilt * 0.0019 +
+        Math.sin(now * 0.0007) * (0.0015 + waveVisualIntensity * 0.0022) +
+        Math.sin(now * 0.0012 + player.vx * 0.005) * (0.0008 + Math.min(0.002, Math.abs(player.vx) / 90000 + Math.abs(player.vy) / 180000));
       ctx.rotate(cinematicRoll);
       ctx.translate(-canvasEl.width * 0.5 + cameraSwayX, -canvasEl.height * 0.5 + cameraSwayY);
 
@@ -1562,6 +1566,12 @@ export const Dust = () => {
                 ctx.fillRect(sx + 1, sy + 2, CELL - 2, 1);
               }
             }
+
+            const mineralSpark = hash2(x * 17 + Math.floor(now * 0.0012), y * 13 + 5);
+            if (mineralSpark > 0.86 && (topAir || nearWater)) {
+              ctx.fillStyle = `rgba(255, 246, 214, ${0.06 + (mineralSpark - 0.86) * 0.45 + (1 - stormMood) * 0.08})`;
+              ctx.fillRect(sx + 2 + ((mineralSpark * 9.7) % (CELL - 4)), sy + 1 + ((mineralSpark * 4.1) % (CELL - 3)), 1, 1);
+            }
           } else if (c === 3) {
             const t = performance.now() * 0.003;
             const wn = hash2(x + Math.floor(t * 11), y + Math.floor(t * 7));
@@ -1757,6 +1767,20 @@ export const Dust = () => {
               ctx.fillStyle = `rgba(246, 252, 255, ${0.04 + spec * 0.13 + waveVisualIntensity * 0.08})`;
               ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
             }
+
+            const currentShear = Math.sin(now * 0.0019 + x * 0.34 + y * 0.22) * 0.5 + 0.5;
+            const undertow = Math.sin(now * 0.0024 - x * 0.42 + y * 0.18) * 0.5 + 0.5;
+            const waterEnergy = clamp01((currentShear * 0.6 + undertow * 0.4) * (0.6 + waveVisualIntensity * 0.7));
+            if (waterEnergy > 0.34) {
+              ctx.fillStyle = `rgba(198, 236, 255, ${0.03 + waterEnergy * (0.08 + waterSpecularity * 0.05)})`;
+              ctx.fillRect(sx + 1, sy + 3 + ((x + y) % 2), CELL - 2, 1);
+            }
+
+            const deepScattering = clamp01(localDepth / 6);
+            if (deepScattering > 0.1) {
+              ctx.fillStyle = `rgba(10, 44, 98, ${0.04 + deepScattering * 0.1})`;
+              ctx.fillRect(sx, sy + CELL - 2, CELL, 2);
+            }
           } else {
             const n = hash2(x, y);
             const topAir = getCell(x, y - 1) === 0;
@@ -1943,13 +1967,16 @@ export const Dust = () => {
         ctx.fill();
         ctx.restore();
 
-        ctx.fillStyle = `rgba(8, 18, 34, ${(0.46 + uiCalm * 0.12) * uiMinimal})`;
-        ctx.fillRect(ix - 44, iy + 12, 88, 20);
-        ctx.strokeStyle = `rgba(170, 220, 255, ${0.42 + uiCalm * 0.23})`;
-        ctx.strokeRect(ix - 44, iy + 12, 88, 20);
-        ctx.fillStyle = "#d9f1ff";
-        ctx.font = "12px system-ui";
-        ctx.fillText(`${distCells}m → tribe`, ix - 36, iy + 26);
+        const ping = 0.5 + Math.sin(now * 0.005) * 0.5;
+        ctx.strokeStyle = `rgba(176, 228, 255, ${0.25 + ping * 0.35})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(ix, iy, 10 + ping * 7, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(208, 238, 255, ${0.34 + uiCalm * 0.18})`;
+        ctx.font = "11px system-ui";
+        ctx.fillText(`${distCells}m`, ix - 12, iy + 24);
       }
 
       // tribe character (first rescue target)
@@ -2514,8 +2541,8 @@ export const Dust = () => {
         const objectiveY = 92;
         ctx.fillStyle = "rgba(216, 238, 255, 0.94)";
         ctx.fillText(objective, 28, objectiveY);
-        ctx.fillStyle = "rgba(198, 224, 248, 0.82)";
-        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, objectiveY + 22);
+        ctx.fillStyle = "rgba(198, 224, 248, 0.74)";
+        ctx.fillText("LMB/Touch: grab dirt · RMB/Toggle: place dirt · R: restart", 28, objectiveY + 22);
       }
 
       if (questHud.state === "success" || questHud.state === "fail") {
