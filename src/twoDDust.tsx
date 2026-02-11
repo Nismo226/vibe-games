@@ -1205,6 +1205,9 @@ export const Dust = () => {
       const volumetricLight = clamp01(0.22 + (1 - stormMood) * 0.46 + airGlow * 0.2);
       const postContrast = clamp01(0.24 + cinematicGradeStrength * 0.56 + impactPulse * 0.18);
       const uiAccent = clamp01(0.2 + uiCalm * 0.5 + goldenHour * 0.15);
+      const sandBackscatter = clamp01(0.18 + sunsetWarmth * 0.4 + (1 - stormMood) * 0.28);
+      const waterSurfaceEnergy = clamp01(0.28 + waveVisualIntensity * 0.52 + humidity * 0.2);
+      const uiQuietness = clamp01(0.72 + uiCalm * 0.22 - waveVisualIntensity * 0.08);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1434,11 +1437,17 @@ export const Dust = () => {
             // subsurface-ish warm scatter near lit top edges
             if (topAir) {
               const sss = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
-              sss.addColorStop(0, "rgba(255, 226, 162, 0.18)");
-              sss.addColorStop(0.45, "rgba(255, 202, 132, 0.07)");
+              sss.addColorStop(0, `rgba(255, 226, 162, ${0.12 + sandBackscatter * 0.14})`);
+              sss.addColorStop(0.45, `rgba(255, 202, 132, ${0.05 + sandBackscatter * 0.06})`);
               sss.addColorStop(1, "rgba(0,0,0,0)");
               ctx.fillStyle = sss;
               ctx.fillRect(sx, sy, CELL, CELL);
+
+              const crestWarm = Math.sin(now * 0.002 + x * 0.88 + y * 0.21) * 0.5 + 0.5;
+              if (crestWarm > 0.38) {
+                ctx.fillStyle = `rgba(255, 236, 188, ${0.02 + crestWarm * 0.05 + sandBackscatter * 0.05})`;
+                ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
+              }
             }
 
             const ao = (topAir ? 0 : 0.55) + (leftAir ? 0 : 0.35) + (rightAir ? 0 : 0.25) + (bottomAir ? 0 : 0.4);
@@ -1655,11 +1664,17 @@ export const Dust = () => {
             }
 
             if (topAir) {
-              const foamBase = 0.54 + waveVisualIntensity * 0.34;
+              const foamBase = 0.48 + waterSurfaceEnergy * 0.36;
               ctx.fillStyle = `rgba(236,252,255,${foamBase})`;
               ctx.fillRect(sx, sy, CELL, 2);
-              ctx.fillStyle = `rgba(210,244,255,${0.2 + waveVisualIntensity * 0.14})`;
+              ctx.fillStyle = `rgba(210,244,255,${0.16 + waterSurfaceEnergy * 0.2})`;
               ctx.fillRect(sx, sy + 2, CELL, 1);
+
+              const capRipple = Math.sin(now * 0.006 + x * 1.1 - y * 0.22) * 0.5 + 0.5;
+              if (capRipple > 0.46) {
+                ctx.fillStyle = `rgba(248, 255, 255, ${0.06 + capRipple * 0.1 + waterSurfaceEnergy * 0.08})`;
+                ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
+              }
 
               const tFoam = performance.now() * 0.008;
               const crest = Math.sin(tFoam + x * 0.75 + y * 0.18) * (0.7 + waveVisualIntensity * 0.6);
@@ -2354,7 +2369,7 @@ export const Dust = () => {
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
       hudGlow.addColorStop(0, `rgba(146, 210, 255, ${0.08 + uiHighlight * 0.12})`);
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
-      ctx.fillStyle = "rgba(0,0,0,0.14)";
+      ctx.fillStyle = `rgba(0,0,0,${0.1 + (1 - uiQuietness) * 0.08})`;
       ctx.fillRect(18, 18, hudW, hudH);
       ctx.fillStyle = hudGrad;
       ctx.fillRect(14, 14, hudW, hudH);
@@ -2486,9 +2501,9 @@ export const Dust = () => {
       const restartX = canvasEl.width - restartW - 16;
       const restartY = 18;
       const restartGrad = ctx.createLinearGradient(restartX, restartY, restartX, restartY + restartH);
-      restartGrad.addColorStop(0, `rgba(36, 70, 108, ${0.78 + uiCalm * 0.08})`);
-      restartGrad.addColorStop(1, `rgba(10, 24, 40, ${0.86 + (1 - uiCalm) * 0.06})`);
-      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      restartGrad.addColorStop(0, `rgba(36, 70, 108, ${0.64 + uiQuietness * 0.18})`);
+      restartGrad.addColorStop(1, `rgba(10, 24, 40, ${0.72 + uiQuietness * 0.18})`);
+      ctx.fillStyle = `rgba(0,0,0,${0.1 + (1 - uiQuietness) * 0.12})`;
       ctx.fillRect(restartX + 2, restartY + 2, restartW, restartH);
       ctx.fillStyle = restartGrad;
       ctx.fillRect(restartX, restartY, restartW, restartH);
@@ -2504,11 +2519,11 @@ export const Dust = () => {
       const joyCenterY = canvasEl.height - 108;
       const joyR = 60;
 
-      ctx.fillStyle = "rgba(9,17,30,0.3)";
+      ctx.fillStyle = `rgba(9,17,30,${0.18 + (1 - uiQuietness) * 0.18})`;
       ctx.beginPath();
       ctx.arc(joyCenterX, joyCenterY, joyR + 10, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(186,218,255,0.35)";
+      ctx.strokeStyle = `rgba(186,218,255,${0.2 + uiQuietness * 0.2})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(joyCenterX, joyCenterY, joyR, 0, Math.PI * 2);
@@ -2526,9 +2541,9 @@ export const Dust = () => {
       const toggleY = canvasEl.height - toggleH - 52;
 
       const toggleGrad = ctx.createLinearGradient(toggleX, toggleY, toggleX, toggleY + toggleH);
-      toggleGrad.addColorStop(0, `rgba(26, 50, 80, ${0.8 + uiCalm * 0.08})`);
-      toggleGrad.addColorStop(1, `rgba(8, 18, 32, ${0.84 + (1 - uiCalm) * 0.06})`);
-      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      toggleGrad.addColorStop(0, `rgba(26, 50, 80, ${0.66 + uiQuietness * 0.2})`);
+      toggleGrad.addColorStop(1, `rgba(8, 18, 32, ${0.74 + uiQuietness * 0.18})`);
+      ctx.fillStyle = `rgba(0,0,0,${0.1 + (1 - uiQuietness) * 0.1})`;
       ctx.fillRect(toggleX + 2, toggleY + 2, toggleW, toggleH);
       ctx.fillStyle = toggleGrad;
       ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
