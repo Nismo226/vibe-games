@@ -987,6 +987,8 @@ export const Dust = () => {
       if (!ctx) return;
 
       const q = questRef.current;
+      const waveVisualIntensity =
+        q.state === "wave" ? Math.min(1, 0.45 + q.waveTime * 0.25) : q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.55 : 0;
       const shake = q.state === "wave" ? Math.min(4, 1.2 + q.waveTime * 0.45) : 0;
       const shakeX = shake > 0 ? Math.sin(performance.now() * 0.04) * shake : 0;
       const shakeY = shake > 0 ? Math.cos(performance.now() * 0.05) * (shake * 0.6) : 0;
@@ -1089,10 +1091,28 @@ export const Dust = () => {
             ctx.fillRect(sx, sy, CELL, CELL);
 
             if (topAir) {
-              ctx.fillStyle = "rgba(232,250,255,0.62)";
+              const foamBase = 0.5 + waveVisualIntensity * 0.34;
+              ctx.fillStyle = `rgba(232,250,255,${foamBase})`;
               ctx.fillRect(sx, sy, CELL, 2);
-              ctx.fillStyle = "rgba(210,244,255,0.22)";
+              ctx.fillStyle = `rgba(210,244,255,${0.2 + waveVisualIntensity * 0.14})`;
               ctx.fillRect(sx, sy + 2, CELL, 1);
+
+              const tFoam = performance.now() * 0.008;
+              const crest = Math.sin(tFoam + x * 0.75 + y * 0.18) * (0.7 + waveVisualIntensity * 0.6);
+              const bubbleChance = hash2(x + Math.floor(tFoam * 3), y + 41);
+              if (bubbleChance > 0.52 - waveVisualIntensity * 0.2) {
+                const bubbleX = sx + 2 + ((bubbleChance * 7.5 + tFoam * 1.6) % (CELL - 4));
+                const bubbleY = sy + 1 + crest * 0.35;
+                ctx.fillStyle = `rgba(244,254,255,${0.22 + waveVisualIntensity * 0.28})`;
+                ctx.fillRect(bubbleX, bubbleY, 2, 1);
+              }
+
+              if (waveVisualIntensity > 0.08) {
+                const shimmer = 0.22 + waveVisualIntensity * 0.34;
+                ctx.fillStyle = `rgba(250,255,255,${shimmer})`;
+                const ridgeY = sy + 1 + crest * 0.25;
+                ctx.fillRect(sx + 1, ridgeY, CELL - 2, 1);
+              }
             }
             if (leftAir) {
               ctx.fillStyle = "rgba(198,236,255,0.16)";
