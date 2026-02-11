@@ -129,6 +129,7 @@ export const Dust = () => {
   });
   const lastRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const cameraRef = useRef({ x: 0, y: 0 });
   const toolRef = useRef({
     mineCooldown: 0,
     placeCooldown: 0,
@@ -180,6 +181,8 @@ export const Dust = () => {
       player.vy = 0;
       player.onGround = false;
       player.prevWaterSubmerge = 0;
+      cameraRef.current.x = 0;
+      cameraRef.current.y = 0;
 
       const quest = questRef.current;
       quest.state = "explore";
@@ -993,9 +996,19 @@ export const Dust = () => {
       const shakeX = shake > 0 ? Math.sin(performance.now() * 0.04) * shake : 0;
       const shakeY = shake > 0 ? Math.cos(performance.now() * 0.05) * (shake * 0.6) : 0;
 
-      const camX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5 + shakeX, GRID_W * CELL - canvasEl.width));
+      const lookAheadX = Math.max(-120, Math.min(120, player.vx * 0.28));
       const aimLift = Math.max(0, (canvasEl.height * 0.38 - mouseRef.current.y) * 0.85);
-      const camY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 - aimLift + shakeY, GRID_H * CELL - canvasEl.height));
+      const targetCamX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5 + lookAheadX + shakeX, GRID_W * CELL - canvasEl.width));
+      const targetCamY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 - aimLift + shakeY, GRID_H * CELL - canvasEl.height));
+
+      const cam = cameraRef.current;
+      const followSpeed = player.onGround ? 11 : 7.5;
+      const smooth = 1 - Math.exp(-dt * followSpeed);
+      cam.x += (targetCamX - cam.x) * smooth;
+      cam.y += (targetCamY - cam.y) * smooth;
+
+      const camX = cam.x;
+      const camY = cam.y;
 
       // background
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
