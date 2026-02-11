@@ -12,7 +12,7 @@ type Player = {
   onGround: boolean;
 };
 
-type QuestState = "explore" | "dialog" | "countdown" | "success" | "fail";
+type QuestState = "explore" | "dialog" | "countdown" | "wave" | "success" | "fail";
 
 const CELL = 12;
 const GRID_W = 120;
@@ -90,14 +90,18 @@ export const Dust = () => {
     dialogElapsed: number;
     tsunamiX: number;
     tsunamiSpeed: number;
+    waveTime: number;
     resultText: string;
+    water: Array<{ x: number; y: number; vx: number; vy: number; life: number }>;
   }>({
     state: "explore",
     timer: 60,
     dialogElapsed: 0,
-    tsunamiX: GRID_W * CELL + 220,
-    tsunamiSpeed: 72,
+    tsunamiX: -220,
+    tsunamiSpeed: 78,
+    waveTime: 0,
     resultText: "",
+    water: [],
   });
 
   const keysRef = useRef<Record<string, boolean>>({});
@@ -556,27 +560,78 @@ export const Dust = () => {
         if (quest.dialogElapsed >= 2.2) {
           quest.state = "countdown";
           quest.timer = 60;
-          quest.tsunamiX = GRID_W * CELL + 180;
+          quest.tsunamiX = -220;
+          quest.waveTime = 0;
+          quest.water.length = 0;
         }
       } else if (quest.state === "countdown") {
         quest.timer = Math.max(0, quest.timer - dt);
-        quest.tsunamiX -= quest.tsunamiSpeed * dt;
+        if (quest.timer <= 0) {
+          quest.state = "wave";
+          quest.waveTime = 0;
+          quest.tsunamiX = -220;
+        }
+      } else if (quest.state === "wave") {
+        quest.waveTime += dt;
+        quest.tsunamiX += quest.tsunamiSpeed * dt;
 
-        const waveFrontX = quest.tsunamiX;
+        // spawn physics-based water clumps from left side
+        const spawn = 8;
+        for (let i = 0; i < spawn; i++) {
+          const ry = (GRID_H * CELL * 0.28) + Math.random() * (GRID_H * CELL * 0.5);
+          quest.water.push({
+            x: Math.min(quest.tsunamiX + Math.random() * 18, 36),
+            y: ry,
+            vx: 120 + Math.random() * 75,
+            vy: -20 + Math.random() * 40,
+            life: 8,
+          });
+        }
+        if (quest.water.length > 1800) quest.water.splice(0, quest.water.length - 1800);
+
         const barrier = tribeBarrierStrength();
-        const waveReachedTribe = waveFrontX <= tribe.x + tribe.w + CELL;
+        let tribeHit = false;
 
-        if (waveReachedTribe) {
-          if (barrier >= 16) {
-            quest.state = "success";
-            quest.resultText = "Barrier held! The tribe is safe.";
-          } else {
-            quest.state = "fail";
-            quest.resultText = "The wave broke through. Build a bigger wall and try again.";
+        for (let i = quest.water.length - 1; i >= 0; i--) {
+          const w = quest.water[i];
+          w.vy += GRAVITY * dt * 0.55;
+          w.vx *= 0.997;
+          w.x += w.vx * dt;
+          w.y += w.vy * dt;
+          w.life -= dt;
+
+          const cx = Math.floor(w.x / CELL);
+          const cy = Math.floor(w.y / CELL);
+
+          if (!inBounds(cx, cy) || w.life <= 0) {
+            if (w.x > GRID_W * CELL + 20 || w.y > GRID_H * CELL + 20 || w.life <= 0) {
+              quest.water.splice(i, 1);
+            }
+            continue;
           }
-        } else if (quest.timer <= 0) {
+
+          if (getCell(cx, cy) !== 0) {
+            // simple fluid collision: bounce and try to slide up/side
+            w.y -= w.vy * dt;
+            w.vy *= -0.2;
+            w.vx *= 0.85;
+            const leftAir = inBounds(cx - 1, cy) && getCell(cx - 1, cy) === 0;
+            const rightAir = inBounds(cx + 1, cy) && getCell(cx + 1, cy) === 0;
+            if (leftAir || rightAir) w.vx += leftAir && rightAir ? (Math.random() < 0.5 ? -60 : 60) : leftAir ? -60 : 60;
+          }
+
+          if (Math.abs(w.x - tribeCenterX) < 14 && Math.abs(w.y - tribeCenterY) < 14) {
+            tribeHit = true;
+          }
+        }
+
+        const wavePassed = quest.tsunamiX > GRID_W * CELL + 200 && quest.waveTime > 8;
+        if (tribeHit && barrier < 16) {
+          quest.state = "fail";
+          quest.resultText = "The wave broke through. Build a bigger wall and try again.";
+        } else if (wavePassed) {
           quest.state = "success";
-          quest.resultText = "You held long enough. The tsunami passed.";
+          quest.resultText = barrier >= 16 ? "Barrier held! The tribe is safe." : "You survived this one, but stronger walls are safer.";
         }
       }
 
@@ -723,22 +778,38 @@ export const Dust = () => {
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", tx - 112, ty - 30);
       }
 
-      if (quest.state === "countdown" || quest.state === "success" || quest.state === "fail") {
-        // tsunami wall incoming from the far right
-        const waveX = quest.tsunamiX - camX;
-        const waveW = canvasEl.width - waveX + 20;
-        if (waveW > 0) {
-          const waveGrad = ctx.createLinearGradient(waveX, 0, waveX + 140, 0);
-          waveGrad.addColorStop(0, "rgba(122,199,255,0.35)");
-          waveGrad.addColorStop(1, "rgba(24,117,196,0.62)");
-          ctx.fillStyle = waveGrad;
-          ctx.fillRect(waveX, 0, waveW, canvasEl.height);
+      if (quest.state === "countdown") {
+        // distant warning water wall at far left horizon
+        const warnX = -camX + 8;
+        ctx.fillStyle = "rgba(116,190,255,0.22)";
+        ctx.fillRect(warnX, 0, 28, canvasEl.height);
+      }
 
-          ctx.fillStyle = "rgba(210,242,255,0.35)";
-          for (let i = 0; i < 16; i++) {
-            const y = (i * 43 + performance.now() * 0.05) % canvasEl.height;
-            ctx.fillRect(waveX + Math.sin((i + performance.now() * 0.002)) * 8, y, 38, 2);
-          }
+      if (quest.state === "wave" || quest.state === "success" || quest.state === "fail") {
+        // physics-based tsunami body
+        const frontX = quest.tsunamiX - camX;
+        const bodyW = 34;
+        const bodyGrad = ctx.createLinearGradient(frontX, 0, frontX + bodyW, 0);
+        bodyGrad.addColorStop(0, "rgba(95,176,245,0.18)");
+        bodyGrad.addColorStop(1, "rgba(28,108,192,0.5)");
+        ctx.fillStyle = bodyGrad;
+        ctx.fillRect(frontX - bodyW, 0, bodyW, canvasEl.height);
+
+        ctx.fillStyle = "rgba(205,238,255,0.45)";
+        for (let i = 0; i < 10; i++) {
+          const y = (i * 58 + performance.now() * 0.08) % canvasEl.height;
+          ctx.fillRect(frontX - 14 + Math.sin(i + performance.now() * 0.004) * 5, y, 18, 2);
+        }
+
+        for (const w of quest.water) {
+          ctx.fillStyle = "rgba(90,170,245,0.42)";
+          ctx.beginPath();
+          ctx.arc(w.x - camX, w.y - camY, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(220,246,255,0.35)";
+          ctx.beginPath();
+          ctx.arc(w.x - camX - 1, w.y - camY - 1, 1.2, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
 
@@ -842,7 +913,8 @@ export const Dust = () => {
       const questHud = questRef.current;
       let objective = "Objective: Reach the far-right tribe.";
       if (questHud.state === "dialog") objective = "Objective: Listen to the elder...";
-      if (questHud.state === "countdown") objective = `Objective: Build a sand barrier! Time: ${questHud.timer.toFixed(1)}s`;
+      if (questHud.state === "countdown") objective = `Objective: Build a sand barrier! Tsunami in: ${questHud.timer.toFixed(1)}s`;
+      if (questHud.state === "wave") objective = "Objective: Hold the barrier! Tsunami is hitting from the LEFT.";
       if (questHud.state === "success") objective = `Success: ${questHud.resultText}`;
       if (questHud.state === "fail") objective = `Failed: ${questHud.resultText}`;
 
