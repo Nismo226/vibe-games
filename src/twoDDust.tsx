@@ -377,6 +377,17 @@ export const Dust = () => {
       const ctx = ensureAudio();
       if (ctx && ctx.state === "suspended") ctx.resume();
 
+      const restartW = 104;
+      const restartH = 34;
+      const restartX = canvasEl.width - restartW - 16;
+      const restartY = 18;
+      const onRestart = e.clientX >= restartX && e.clientX <= restartX + restartW && e.clientY >= restartY && e.clientY <= restartY + restartH;
+      if (onRestart) {
+        resetLevel();
+        if (e.pointerType !== "mouse") e.preventDefault();
+        return;
+      }
+
       const toggleW = 132;
       const toggleH = 44;
       const toggleX = canvasEl.width - toggleW - 16;
@@ -1433,6 +1444,19 @@ export const Dust = () => {
         ctx.font = "bold 15px system-ui";
         ctx.fillText(questHud.state === "success" ? "TRIBE SAVED" : "TRIBE LOST", canvasEl.width * 0.5 - 56, 40);
       }
+
+      // restart control (mobile + desktop click)
+      const restartW = 104;
+      const restartH = 34;
+      const restartX = canvasEl.width - restartW - 16;
+      const restartY = 18;
+      ctx.fillStyle = "rgba(12,26,42,0.82)";
+      ctx.fillRect(restartX, restartY, restartW, restartH);
+      ctx.strokeStyle = "rgba(186,218,255,0.5)";
+      ctx.strokeRect(restartX, restartY, restartW, restartH);
+      ctx.fillStyle = "#e8f5ff";
+      ctx.font = "bold 14px system-ui";
+      ctx.fillText("Restart", restartX + 22, restartY + 22);
 
       // mobile left joystick (movement only)
       const mobile = mobileRef.current;
