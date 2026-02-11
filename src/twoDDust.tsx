@@ -1177,6 +1177,9 @@ export const Dust = () => {
       const volumetricDust = clamp01(0.16 + (1 - stormMood) * 0.42 + velocityEnergy * 0.18);
       const waterClarity = clamp01(0.46 + (1 - humidity) * 0.28 - stormMood * 0.18 + waveVisualIntensity * 0.14);
       const uiSubtlety = clamp01(0.84 + uiCalm * 0.14 - waveVisualIntensity * 0.1);
+      const speedBlur = clamp01(Math.abs(player.vx) / 420 + (Math.abs(player.vy) / 900) * 0.25);
+      const impactPulse = q.state === "wave" ? clamp01(q.waveTime * 0.35) : 0;
+      const cinematicAberration = clamp01(chromaPulse + waveVisualIntensity * 0.02 + speedBlur * 0.015);
       const atmosphereTint = {
         r: Math.floor(134 + (1 - stormMood) * 36 + sunsetWarmth * 24),
         g: Math.floor(170 + (1 - stormMood) * 22 + sunsetWarmth * 14),
@@ -1501,6 +1504,12 @@ export const Dust = () => {
               capillary.addColorStop(1, "rgba(38, 62, 84, 0.2)");
               ctx.fillStyle = capillary;
               ctx.fillRect(sx, sy + CELL - 3, CELL, 3);
+
+              const causticFlicker = Math.sin(now * 0.0043 + x * 0.82 + y * 0.31) * 0.5 + 0.5;
+              if (causticFlicker > 0.45) {
+                ctx.fillStyle = `rgba(224, 246, 255, ${0.03 + causticFlicker * 0.08 + waterClarity * 0.06})`;
+                ctx.fillRect(sx + 1, sy + 2, CELL - 2, 1);
+              }
             }
           } else if (c === 3) {
             const t = performance.now() * 0.003;
@@ -1679,6 +1688,12 @@ export const Dust = () => {
             if (hash2(x + 19, y + Math.floor(t * 13)) > 0.62) {
               ctx.fillStyle = "rgba(240,252,255,0.34)";
               ctx.fillRect(sx + 2, sy + 3, 2, 1);
+            }
+
+            const spec = Math.max(0, Math.sin(now * 0.0032 + x * 0.62 - y * 0.34 + lightDirX * 1.8));
+            if (topAir && spec > 0.56) {
+              ctx.fillStyle = `rgba(246, 252, 255, ${0.04 + spec * 0.13 + waveVisualIntensity * 0.08})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
             }
           } else {
             const n = hash2(x, y);
@@ -2223,6 +2238,18 @@ export const Dust = () => {
       ctx.fillStyle = playerWater > 0.12 ? "#bfe4ff" : "#cfe9ff";
       ctx.fillRect(player.x - camX, player.y - camY, player.w, player.h);
 
+      if (speedBlur > 0.1) {
+        const px = player.x - camX;
+        const py = player.y - camY;
+        const trailLen = 8 + speedBlur * 16;
+        const dir = player.vx >= 0 ? -1 : 1;
+        const trail = ctx.createLinearGradient(px, py, px + trailLen * dir, py + player.h);
+        trail.addColorStop(0, `rgba(206, 232, 255, ${0.06 + speedBlur * 0.14})`);
+        trail.addColorStop(1, "rgba(206, 232, 255, 0)");
+        ctx.fillStyle = trail;
+        ctx.fillRect(Math.min(px, px + trailLen * dir), py, Math.abs(trailLen), player.h);
+      }
+
       ctx.restore();
 
       // HUD (auto-compact while actively playing/building)
@@ -2467,7 +2494,7 @@ export const Dust = () => {
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // very subtle edge chromatic separation for lens character
-      const aberration = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.008 + chromaPulse;
+      const aberration = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.008 + cinematicAberration;
       ctx.fillStyle = `rgba(110, 170, 255, ${aberration})`;
       ctx.fillRect(0, 0, 2, canvasEl.height);
       ctx.fillStyle = `rgba(255, 136, 124, ${aberration * 0.9})`;
@@ -2518,9 +2545,9 @@ export const Dust = () => {
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       const finalTone = ctx.createLinearGradient(0, 0, canvasEl.width, canvasEl.height);
-      finalTone.addColorStop(0, `rgba(255, 220, 174, ${0.018 + cinematicGradeStrength * 0.03})`);
+      finalTone.addColorStop(0, `rgba(255, 220, 174, ${0.018 + cinematicGradeStrength * 0.03 + impactPulse * 0.015})`);
       finalTone.addColorStop(0.52, "rgba(0,0,0,0)");
-      finalTone.addColorStop(1, `rgba(14, 28, 58, ${0.03 + cinematicGradeStrength * 0.045})`);
+      finalTone.addColorStop(1, `rgba(14, 28, 58, ${0.03 + cinematicGradeStrength * 0.045 + impactPulse * 0.02})`);
       ctx.fillStyle = finalTone;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
