@@ -1111,9 +1111,19 @@ export const Dust = () => {
 
       const q = questRef.current;
       const now = performance.now();
+      const resultAfterglow = q.state === "success" || q.state === "fail" ? Math.max(0, 1 - q.resultHold / 2.2) : 0;
       const waveVisualIntensity =
-        q.state === "wave" ? Math.min(1, 0.45 + q.waveTime * 0.25) : q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.55 : 0;
-      const stormMood = q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.7 : q.state === "wave" ? Math.min(1, 0.4 + q.waveTime * 0.24) : 0;
+        q.state === "wave"
+          ? Math.min(1, 0.45 + q.waveTime * 0.25)
+          : q.state === "countdown"
+            ? Math.max(0, 1 - q.timer / 90) * 0.55
+            : resultAfterglow * 0.32;
+      const stormMood =
+        q.state === "countdown"
+          ? Math.max(0, 1 - q.timer / 90) * 0.7
+          : q.state === "wave"
+            ? Math.min(1, 0.4 + q.waveTime * 0.24)
+            : resultAfterglow * 0.46;
       const humidity = Math.min(1, 0.16 + stormMood * 0.62 + waveVisualIntensity * 0.36);
       const gradeLift = 1 - stormMood * 0.18;
       const cinematicExposure = lerp(1.06, 0.9, stormMood * 0.8 + waveVisualIntensity * 0.2);
@@ -1967,6 +1977,29 @@ export const Dust = () => {
       ctx.fillRect(tx + 2, ty + 6, 8, 10);
       ctx.fillStyle = "#f4e4d2";
       ctx.fillRect(tx + 4, ty + 8, 4, 2);
+
+      // family nearby (wife + two kids) with small panic shuffle during storm
+      const panicPhase = quest.state === "countdown" || quest.state === "wave" ? 1 : 0;
+      const panicAmp = panicPhase ? 5.5 : 1.4;
+      const wifeX = tx + 22 + Math.sin(now * 0.006) * panicAmp;
+      const kid1X = tx + 34 + Math.sin(now * 0.008 + 1.2) * (panicAmp * 0.9);
+      const kid2X = tx - 14 + Math.sin(now * 0.007 + 2.4) * (panicAmp * 0.9);
+      const familyY = ty + 1;
+
+      // wife
+      ctx.fillStyle = "#ffd7b0";
+      ctx.fillRect(wifeX + 2, familyY, 5, 5);
+      ctx.fillStyle = "#9a5d3c";
+      ctx.fillRect(wifeX + 1, familyY + 5, 7, 9);
+
+      // kids
+      ctx.fillStyle = "#ffe1be";
+      ctx.fillRect(kid1X + 2, familyY + 2, 4, 4);
+      ctx.fillRect(kid2X + 2, familyY + 2, 4, 4);
+      ctx.fillStyle = "#7f96b3";
+      ctx.fillRect(kid1X + 1, familyY + 6, 6, 7);
+      ctx.fillStyle = "#8f7fb3";
+      ctx.fillRect(kid2X + 1, familyY + 6, 6, 7);
 
       if (quest.state === "countdown" || quest.state === "wave") {
         const panic = quest.state === "wave" ? 1 : Math.min(1, 1 - quest.timer / 90);
