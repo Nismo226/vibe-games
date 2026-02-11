@@ -1102,6 +1102,8 @@ export const Dust = () => {
       const waveVisualIntensity =
         q.state === "wave" ? Math.min(1, 0.45 + q.waveTime * 0.25) : q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.55 : 0;
       const stormMood = q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.7 : q.state === "wave" ? Math.min(1, 0.4 + q.waveTime * 0.24) : 0;
+      const humidity = Math.min(1, 0.16 + stormMood * 0.62 + waveVisualIntensity * 0.36);
+      const gradeLift = 1 - stormMood * 0.18;
       const shake = q.state === "wave" ? Math.min(4, 1.2 + q.waveTime * 0.45) : 0;
       const shakeX = shake > 0 ? Math.sin(now * 0.04) * shake : 0;
       const shakeY = shake > 0 ? Math.cos(now * 0.05) * (shake * 0.6) : 0;
@@ -1128,7 +1130,8 @@ export const Dust = () => {
         1 +
         Math.sin(now * 0.00062) * 0.0025 +
         Math.min(0.018, Math.abs(player.vx) / 5200) +
-        waveVisualIntensity * 0.012;
+        waveVisualIntensity * 0.012 -
+        humidity * 0.003;
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1143,9 +1146,10 @@ export const Dust = () => {
 
       // background
       const dayToStorm = Math.min(1, stormMood * 0.9 + waveVisualIntensity * 0.5);
-      const skyTop = `rgba(${12 + Math.floor(dayToStorm * 20)}, ${26 + Math.floor(dayToStorm * 17)}, ${54 + Math.floor(dayToStorm * 22)}, 1)`;
-      const skyMid = `rgba(${22 + Math.floor(dayToStorm * 11)}, ${56 + Math.floor(dayToStorm * 14)}, ${92 + Math.floor(dayToStorm * 16)}, 1)`;
-      const skyBottom = `rgba(${28 + Math.floor(dayToStorm * 12)}, ${70 + Math.floor(dayToStorm * 11)}, ${82 + Math.floor(dayToStorm * 12)}, 1)`;
+      const heatHueShift = Math.sin(now * 0.00017) * 0.5 + 0.5;
+      const skyTop = `rgba(${14 + Math.floor(dayToStorm * 19)}, ${28 + Math.floor(dayToStorm * 16)}, ${56 + Math.floor(dayToStorm * 21)}, 1)`;
+      const skyMid = `rgba(${26 + Math.floor(dayToStorm * 12)}, ${60 + Math.floor(dayToStorm * 13)}, ${96 + Math.floor(dayToStorm * 15)}, 1)`;
+      const skyBottom = `rgba(${34 + Math.floor(dayToStorm * 14 + heatHueShift * 4)}, ${78 + Math.floor(dayToStorm * 10 + heatHueShift * 3)}, ${90 + Math.floor(dayToStorm * 10)}, 1)`;
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       bg.addColorStop(0, skyTop);
       bg.addColorStop(0.52, skyMid);
@@ -1153,7 +1157,16 @@ export const Dust = () => {
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      // upper-atmosphere cloud wisps
+      // solar disc + upper-atmosphere cloud wisps
+      const sunDiscX = canvasEl.width * 0.2 + Math.sin(now * 0.00018) * 22;
+      const sunDiscY = canvasEl.height * 0.14 - stormMood * 10;
+      const sunDisc = ctx.createRadialGradient(sunDiscX, sunDiscY, 4, sunDiscX, sunDiscY, 64 + humidity * 34);
+      sunDisc.addColorStop(0, `rgba(255, 236, 188, ${0.24 * gradeLift})`);
+      sunDisc.addColorStop(0.45, `rgba(255, 206, 144, ${0.12 * gradeLift})`);
+      sunDisc.addColorStop(1, "rgba(255, 190, 122, 0)");
+      ctx.fillStyle = sunDisc;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height * 0.5);
+
       const cloudBand = ctx.createLinearGradient(0, 0, 0, canvasEl.height * 0.36);
       cloudBand.addColorStop(0, `rgba(176, 210, 236, ${0.06 - stormMood * 0.025})`);
       cloudBand.addColorStop(1, "rgba(176, 210, 236, 0)");
@@ -1458,8 +1471,8 @@ export const Dust = () => {
       ctx.fillStyle = horizonFog;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      const shimmerAlpha = 0.018 + Math.sin(now * 0.0017) * 0.006;
-      ctx.fillStyle = `rgba(255, 210, 152, ${Math.max(0.008, shimmerAlpha)})`;
+      const shimmerAlpha = (0.016 + Math.sin(now * 0.0017) * 0.006) * (1 - humidity * 0.3);
+      ctx.fillStyle = `rgba(255, 210, 152, ${Math.max(0.007, shimmerAlpha)})`;
       for (let y = 0; y < canvasEl.height; y += 28) {
         const bandOffset = Math.sin(now * 0.001 + y * 0.08) * (1.8 + waveVisualIntensity * 1.4);
         ctx.fillRect(bandOffset, y, canvasEl.width, 1);
@@ -1668,6 +1681,19 @@ export const Dust = () => {
       }
 
       // ambient dust haze + cinematic grading
+      const bloomLike = ctx.createRadialGradient(
+        canvasEl.width * 0.55,
+        canvasEl.height * 0.34,
+        10,
+        canvasEl.width * 0.55,
+        canvasEl.height * 0.34,
+        Math.max(canvasEl.width, canvasEl.height) * 0.58,
+      );
+      bloomLike.addColorStop(0, `rgba(255, 224, 170, ${0.05 * gradeLift + waveVisualIntensity * 0.04})`);
+      bloomLike.addColorStop(1, "rgba(255, 224, 170, 0)");
+      ctx.fillStyle = bloomLike;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
       const haze = ctx.createRadialGradient(
         canvasEl.width * 0.5,
         canvasEl.height * 0.45,
@@ -1711,8 +1737,8 @@ export const Dust = () => {
 
       // split-toning grade: warm highlights + cool shadows
       const coolShadow = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
-      coolShadow.addColorStop(0, "rgba(28, 50, 96, 0.05)");
-      coolShadow.addColorStop(1, "rgba(6, 18, 40, 0.1)");
+      coolShadow.addColorStop(0, `rgba(28, 50, 96, ${0.04 + humidity * 0.03})`);
+      coolShadow.addColorStop(1, `rgba(6, 18, 40, ${0.09 + humidity * 0.06})`);
       ctx.fillStyle = coolShadow;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
@@ -1851,7 +1877,7 @@ export const Dust = () => {
       const compactHud = mouseRef.current.left || mouseRef.current.right || mobileRef.current.moveId !== -1;
       const barrierActive = questHud.state === "countdown" || questHud.state === "wave";
 
-      const hudH = compactHud ? 56 : 94;
+      const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
       hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.44)");
@@ -1881,10 +1907,24 @@ export const Dust = () => {
       ctx.fillText(`2D Dust Prototype ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
+
+      const dirtBarW = Math.min(180, hudW - 280);
+      const dirtFill = Math.max(0, Math.min(1, dirtRef.current / MAX_DIRT));
+      const dirtBarX = 28;
+      const dirtBarY = compactHud ? 66 : 68;
+      ctx.fillStyle = "rgba(14,22,35,0.7)";
+      ctx.fillRect(dirtBarX, dirtBarY, dirtBarW, 8);
+      const dirtGrad = ctx.createLinearGradient(dirtBarX, dirtBarY, dirtBarX + dirtBarW, dirtBarY);
+      dirtGrad.addColorStop(0, "rgba(212, 166, 102, 0.9)");
+      dirtGrad.addColorStop(1, "rgba(248, 210, 138, 0.95)");
+      ctx.fillStyle = dirtGrad;
+      ctx.fillRect(dirtBarX, dirtBarY, dirtBarW * dirtFill, 8);
+      ctx.strokeStyle = "rgba(214,230,255,0.32)";
+      ctx.strokeRect(dirtBarX, dirtBarY, dirtBarW, 8);
       if (hudWind.storm > 0.02) {
         const windText = `Wind ${windDir} ${Math.round(windLevel * 100)}%`;
         ctx.fillStyle = windLevel > 0.6 ? "#ffd8bf" : "#cde9ff";
-        ctx.fillText(windText, 28, compactHud ? 82 : 82);
+        ctx.fillText(windText, 222, compactHud ? 74 : 76);
       }
 
       if (barrierActive || questHud.state === "success" || questHud.state === "fail") {
@@ -1909,7 +1949,7 @@ export const Dust = () => {
       }
 
       if (!compactHud) {
-        const objectiveY = hudWind.storm > 0.02 ? 100 : 82;
+        const objectiveY = 92;
         ctx.fillStyle = "#d8eeff";
         ctx.fillText(objective, 28, objectiveY);
         ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, objectiveY + 22);
@@ -1987,9 +2027,9 @@ export const Dust = () => {
       ctx.font = "bold 14px system-ui";
       ctx.fillText(grabActive ? "Mode: GRAB" : "Mode: PLACE", toggleX + 16, toggleY + 28);
 
-      // subtle film grain
+      // subtle film grain + chroma jitter
       const t = performance.now() * 0.001;
-      ctx.fillStyle = `rgba(255,255,255,${0.018 + Math.sin(t * 2.7) * 0.004})`;
+      ctx.fillStyle = `rgba(255,255,255,${0.014 + Math.sin(t * 2.7) * 0.003 + humidity * 0.004})`;
       for (let i = 0; i < 130; i++) {
         const gx = ((i * 73.13 + t * 97) % canvasEl.width + canvasEl.width) % canvasEl.width;
         const gy = ((i * 51.77 + t * 61) % canvasEl.height + canvasEl.height) % canvasEl.height;
@@ -1997,7 +2037,7 @@ export const Dust = () => {
       }
 
       // subtle scanline pass for retro camera feel
-      ctx.fillStyle = "rgba(6, 12, 24, 0.055)";
+      ctx.fillStyle = `rgba(6, 12, 24, ${0.042 + humidity * 0.028})`;
       for (let y = 0; y < canvasEl.height; y += 4) {
         ctx.fillRect(0, y, canvasEl.width, 1);
       }
