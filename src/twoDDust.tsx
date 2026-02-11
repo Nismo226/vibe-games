@@ -1184,6 +1184,9 @@ export const Dust = () => {
       const speedBlur = clamp01(Math.abs(player.vx) / 420 + (Math.abs(player.vy) / 900) * 0.25);
       const impactPulse = q.state === "wave" ? clamp01(q.waveTime * 0.35) : 0;
       const cinematicAberration = clamp01(chromaPulse + waveVisualIntensity * 0.02 + speedBlur * 0.015);
+      const sandSpecularity = clamp01(0.18 + (1 - humidity) * 0.34 + sunsetWarmth * 0.22 - stormMood * 0.16);
+      const waterSpecularity = clamp01(0.42 + waveVisualIntensity * 0.32 + waterClarity * 0.24 + (1 - stormMood) * 0.1);
+      const uiMinimal = clamp01(0.78 + uiCalm * 0.16);
       const goldenHour = clamp01(0.56 + Math.sin(now * 0.000045 + 0.8) * 0.44);
       const polarizer = clamp01(0.35 + (1 - humidity) * 0.48 + goldenHour * 0.16 - waveVisualIntensity * 0.12);
       const atmosphereTint = {
@@ -1404,7 +1407,7 @@ export const Dust = () => {
 
             const crestSpec = Math.sin(now * 0.0015 + x * 1.2 - y * 0.45) * 0.5 + 0.5;
             if (slopeMask > 0.32 && crestSpec > 0.42) {
-              ctx.fillStyle = `rgba(255, 236, 186, ${0.03 + crestSpec * 0.08 + airGlow * 0.04})`;
+              ctx.fillStyle = `rgba(255, 236, 186, ${0.02 + crestSpec * (0.05 + sandSpecularity * 0.08) + airGlow * 0.04})`;
               ctx.fillRect(sx + 1, sy + 1, CELL - 2, 2);
             }
 
@@ -1606,7 +1609,7 @@ export const Dust = () => {
             const fresnel = (topAir ? 0.22 : 0.08) + (leftAir || rightAir ? 0.07 : 0);
             if (fresnel > 0.06) {
               const edgeSheen = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
-              edgeSheen.addColorStop(0, `rgba(244,252,255,${fresnel + waveVisualIntensity * 0.12})`);
+              edgeSheen.addColorStop(0, `rgba(244,252,255,${fresnel * (0.72 + waterSpecularity * 0.7) + waveVisualIntensity * 0.12})`);
               edgeSheen.addColorStop(1, "rgba(170,220,255,0)");
               ctx.fillStyle = edgeSheen;
               ctx.fillRect(sx, sy, CELL, CELL);
@@ -1877,7 +1880,7 @@ export const Dust = () => {
         ctx.save();
         ctx.translate(ix, iy);
         ctx.rotate(ang);
-        ctx.fillStyle = "rgba(156, 221, 255, 0.92)";
+        ctx.fillStyle = `rgba(156, 221, 255, ${0.66 * uiMinimal})`;
         ctx.beginPath();
         ctx.moveTo(14, 0);
         ctx.lineTo(-12, -9);
@@ -1886,7 +1889,7 @@ export const Dust = () => {
         ctx.fill();
         ctx.restore();
 
-        ctx.fillStyle = `rgba(8, 18, 34, ${0.62 + uiCalm * 0.2})`;
+        ctx.fillStyle = `rgba(8, 18, 34, ${(0.46 + uiCalm * 0.12) * uiMinimal})`;
         ctx.fillRect(ix - 44, iy + 12, 88, 20);
         ctx.strokeStyle = `rgba(170, 220, 255, ${0.42 + uiCalm * 0.23})`;
         ctx.strokeRect(ix - 44, iy + 12, 88, 20);
@@ -1945,11 +1948,11 @@ export const Dust = () => {
       if (quest.state === "dialog") {
         const toastW = 290;
         const toastX = Math.max(12, Math.min(tx - 120, canvasEl.width - toastW - 12));
-        ctx.fillStyle = "rgba(20,28,45,0.9)";
+        ctx.fillStyle = "rgba(20,28,45,0.72)";
         ctx.fillRect(toastX, ty - 56, toastW, 40);
         ctx.fillStyle = "#d7ecff";
         ctx.font = "13px system-ui";
-        ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", toastX + 8, ty - 30);
+        ctx.fillText("Elder: The water is rising fast...", toastX + 8, ty - 30);
       }
 
       // removed legacy white wave overlays; keep only block-water visuals
@@ -2290,8 +2293,8 @@ export const Dust = () => {
       const questHud = questRef.current;
       let objective = "Objective: Reach the far-right tribe.";
       if (questHud.state === "dialog") objective = "Objective: Listen to the elder...";
-      if (questHud.state === "countdown") objective = `Objective: Build a sand barrier! Tsunami in: ${questHud.timer.toFixed(1)}s`;
-      if (questHud.state === "wave") objective = "Objective: Hold the barrier! Tsunami is hitting from the LEFT.";
+      if (questHud.state === "countdown") objective = `Objective: Prepare before impact — ${questHud.timer.toFixed(1)}s`;
+      if (questHud.state === "wave") objective = "Objective: Survive the impact and protect the tribe.";
       if (questHud.state === "success") objective = `Success: ${questHud.resultText}`;
       if (questHud.state === "fail") objective = `Failed: ${questHud.resultText}`;
 
@@ -2583,6 +2586,13 @@ export const Dust = () => {
       finalTone.addColorStop(0.52, "rgba(0,0,0,0)");
       finalTone.addColorStop(1, `rgba(14, 28, 58, ${0.03 + cinematicGradeStrength * 0.045 + impactPulse * 0.02})`);
       ctx.fillStyle = finalTone;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const printGrade = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      printGrade.addColorStop(0, `rgba(255, 232, 198, ${0.012 + (1 - stormMood) * 0.02})`);
+      printGrade.addColorStop(0.5, `rgba(198, 216, 236, ${0.006 + humidity * 0.01})`);
+      printGrade.addColorStop(1, `rgba(8, 22, 44, ${0.022 + stormMood * 0.024})`);
+      ctx.fillStyle = printGrade;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       const anamorphic = ctx.createLinearGradient(0, canvasEl.height * 0.32, canvasEl.width, canvasEl.height * 0.32);
