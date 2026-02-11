@@ -83,6 +83,7 @@ export const Dust = () => {
 
   const keysRef = useRef<Record<string, boolean>>({});
   const mouseRef = useRef({ x: 0, y: 0, left: false, right: false });
+  const touchIdsRef = useRef<Set<number>>(new Set());
   const lastRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const toolRef = useRef({
@@ -125,19 +126,53 @@ export const Dust = () => {
       keysRef.current[e.key.toLowerCase()] = false;
     }
 
-    function onMouseMove(e: MouseEvent) {
+    function onPointerMove(e: PointerEvent) {
       mouseRef.current.x = e.clientX;
       mouseRef.current.y = e.clientY;
+
+      if (e.pointerType === "mouse") {
+        mouseRef.current.left = (e.buttons & 1) !== 0;
+        mouseRef.current.right = (e.buttons & 2) !== 0;
+      }
     }
 
-    function onMouseDown(e: MouseEvent) {
-      if (e.button === 0) mouseRef.current.left = true;
-      if (e.button === 2) mouseRef.current.right = true;
+    function syncTouchToolState() {
+      const touches = touchIdsRef.current.size;
+      if (touches >= 2) {
+        mouseRef.current.left = false;
+        mouseRef.current.right = true; // two-finger hold = place
+      } else if (touches === 1) {
+        mouseRef.current.left = true; // one-finger hold = suck
+        mouseRef.current.right = false;
+      } else {
+        mouseRef.current.left = false;
+        mouseRef.current.right = false;
+      }
     }
 
-    function onMouseUp(e: MouseEvent) {
-      if (e.button === 0) mouseRef.current.left = false;
-      if (e.button === 2) mouseRef.current.right = false;
+    function onPointerDown(e: PointerEvent) {
+      mouseRef.current.x = e.clientX;
+      mouseRef.current.y = e.clientY;
+
+      if (e.pointerType === "mouse") {
+        if (e.button === 0) mouseRef.current.left = true;
+        if (e.button === 2) mouseRef.current.right = true;
+        return;
+      }
+
+      touchIdsRef.current.add(e.pointerId);
+      syncTouchToolState();
+    }
+
+    function onPointerUp(e: PointerEvent) {
+      if (e.pointerType === "mouse") {
+        if (e.button === 0) mouseRef.current.left = false;
+        if (e.button === 2) mouseRef.current.right = false;
+        return;
+      }
+
+      touchIdsRef.current.delete(e.pointerId);
+      syncTouchToolState();
     }
 
     function worldToCell(px: number, py: number) {
@@ -230,13 +265,13 @@ export const Dust = () => {
       const dx = tc.x * CELL + CELL * 0.5 - pCenterX;
       const dy = tc.y * CELL + CELL * 0.5 - pCenterY;
       const dist = Math.hypot(dx, dy);
-      const reach = 96 + tool.carrySize * 1.6;
+      const reach = 140 + tool.carrySize * 2.4;
 
       if (mouseRef.current.left) {
         tool.blobSize = Math.min(22, tool.blobSize + dt * 30);
 
         if (dist <= reach && tool.mineCooldown <= 0) {
-          const suctionReach = reach + Math.max(0, tool.blobSize) * 0.9;
+          const suctionReach = reach + Math.max(0, tool.blobSize) * 1.4;
           const pick = findNearestDirt(mx, my, suctionReach);
 
           if (pick) {
@@ -352,8 +387,8 @@ export const Dust = () => {
       const tool = toolRef.current;
       for (let i = tool.falling.length - 1; i >= 0; i--) {
         const f = tool.falling[i];
-        f.vy += GRAVITY * dt * 0.9;
-        if (f.vy > 720) f.vy = 720;
+        f.vy += GRAVITY * dt * 1.15;
+        if (f.vy > 980) f.vy = 980;
         f.y += f.vy * dt;
 
         const cx = Math.floor(f.x / CELL);
@@ -413,24 +448,65 @@ export const Dust = () => {
 
           if (c === 1) {
             const n = hash2(x, y);
-            const base = 92 + Math.floor(n * 24);
-            ctx.fillStyle = `rgb(${base + 25}, ${base + 8}, ${base - 18})`;
+            const base = 88 + Math.floor(n * 26);
+            ctx.fillStyle = `rgb(${base + 28}, ${base + 10}, ${base - 20})`;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
+            // subtle internal color variation for grainy look
+            const grad = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+            grad.addColorStop(0, "rgba(238, 199, 132, 0.12)");
+            grad.addColorStop(1, "rgba(90, 62, 30, 0.14)");
+            ctx.fillStyle = grad;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             // grain/sand speckle
-            ctx.fillStyle = "rgba(222, 183, 120, 0.22)";
+            ctx.fillStyle = "rgba(234, 196, 134, 0.24)";
             if (hash2(x + 11, y + 7) > 0.35) ctx.fillRect(sx + 2, sy + 2, 2, 2);
             if (hash2(x + 17, y + 3) > 0.45) ctx.fillRect(sx + 7, sy + 3, 2, 2);
             if (hash2(x + 5, y + 19) > 0.4) ctx.fillRect(sx + 4, sy + 8, 2, 2);
+            if (hash2(x + 13, y + 31) > 0.52) ctx.fillRect(sx + 9, sy + 5, 1, 1);
 
-            ctx.fillStyle = "rgba(64, 44, 24, 0.2)";
+            ctx.fillStyle = "rgba(58, 40, 22, 0.24)";
             if (hash2(x + 23, y + 29) > 0.5) ctx.fillRect(sx + 9, sy + 7, 2, 2);
+            if (hash2(x + 2, y + 37) > 0.58) ctx.fillRect(sx + 5, sy + 10, 1, 1);
+
+            // fake soft contouring based on neighboring air
+            if (getCell(x, y - 1) === 0) {
+              ctx.fillStyle = "rgba(245, 213, 150, 0.28)";
+              ctx.fillRect(sx, sy, CELL, 2);
+            }
+            if (getCell(x, y + 1) === 0) {
+              ctx.fillStyle = "rgba(45, 29, 16, 0.3)";
+              ctx.fillRect(sx, sy + CELL - 2, CELL, 2);
+            }
+            if (getCell(x - 1, y) === 0) {
+              ctx.fillStyle = "rgba(230, 192, 130, 0.16)";
+              ctx.fillRect(sx, sy, 2, CELL);
+            }
+            if (getCell(x + 1, y) === 0) {
+              ctx.fillStyle = "rgba(40, 26, 14, 0.18)";
+              ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
+            }
           } else {
             ctx.fillStyle = "#5b5f68";
             ctx.fillRect(sx, sy, CELL, CELL);
           }
         }
       }
+
+      // ambient dust haze
+      const haze = ctx.createRadialGradient(
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.45,
+        20,
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.45,
+        Math.max(canvasEl.width, canvasEl.height) * 0.75,
+      );
+      haze.addColorStop(0, "rgba(225, 185, 120, 0.045)");
+      haze.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = haze;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // falling placed dirt clumps
       const tool = toolRef.current;
@@ -507,7 +583,7 @@ export const Dust = () => {
       ctx.fillText("2D Dust Prototype", 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}`, 28, 60);
-      ctx.fillText("Move: A/D  Jump: W/Space  Suck: Hold Left  Place: Hold Right (falls + stacks)", 28, 82);
+      ctx.fillText("A/D + W/Space | Mouse: L Suck / R Drop | Touch: 1 finger suck, 2 fingers drop", 28, 82);
 
       applyTools(camX, camY, dt);
     }
@@ -528,21 +604,24 @@ export const Dust = () => {
     window.addEventListener("resize", resize);
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerdown", onPointerDown, { passive: false });
+    window.addEventListener("pointerup", onPointerUp, { passive: false });
+    window.addEventListener("pointercancel", onPointerUp, { passive: false });
 
     const preventMenu = (e: Event) => e.preventDefault();
     canvasEl.addEventListener("contextmenu", preventMenu);
+    canvasEl.style.touchAction = "none";
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", resize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       canvasEl.removeEventListener("contextmenu", preventMenu);
     };
   }, []);
