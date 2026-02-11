@@ -964,12 +964,7 @@ export const Dust = () => {
       ctx.fillStyle = "#cfe9ff";
       ctx.fillRect(player.x - camX, player.y - camY, player.w, player.h);
 
-      // HUD
-      ctx.fillStyle = "rgba(10,18,30,0.72)";
-      ctx.fillRect(14, 14, 760, 110);
-      ctx.strokeStyle = "rgba(170,210,255,0.45)";
-      ctx.strokeRect(14, 14, 760, 110);
-
+      // HUD (auto-compact while actively playing/building)
       const questHud = questRef.current;
       let objective = "Objective: Reach the far-right tribe.";
       if (questHud.state === "dialog") objective = "Objective: Listen to the elder...";
@@ -981,14 +976,23 @@ export const Dust = () => {
       const visCols = Math.floor(canvasEl.width / CELL);
       const visRows = Math.floor(canvasEl.height / CELL);
       const visSquares = visCols * visRows;
+      const compactHud = mouseRef.current.left || mouseRef.current.right || mobileRef.current.moveId !== -1;
+
+      ctx.fillStyle = "rgba(10,18,30,0.72)";
+      ctx.fillRect(14, 14, 760, compactHud ? 62 : 110);
+      ctx.strokeStyle = "rgba(170,210,255,0.45)";
+      ctx.strokeRect(14, 14, 760, compactHud ? 62 : 110);
 
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
       ctx.fillText(`2D Dust Prototype ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
-      ctx.fillText(objective, 28, 82);
-      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
+
+      if (!compactHud) {
+        ctx.fillText(objective, 28, 82);
+        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
+      }
 
       // mobile left joystick (movement only)
       const mobile = mobileRef.current;
