@@ -709,6 +709,19 @@ export const Dust = () => {
       }
     }
 
+    function getStormWind(quest: { state: QuestState; timer: number; waveTime: number }) {
+      const countdown = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 90)) : 0;
+      const wave = quest.state === "wave" ? Math.max(0, Math.min(1, 0.35 + quest.waveTime * 0.2)) : 0;
+      const storm = Math.max(countdown, wave);
+      if (storm <= 0) return { gust: 0, storm: 0 };
+
+      const t = performance.now() * 0.001;
+      const sway = Math.sin(t * 0.85) * 0.6 + Math.sin(t * 1.9 + 1.7) * 0.4;
+      const pulse = Math.max(0, Math.sin(t * 0.55 + 0.8));
+      const gust = sway * (26 + storm * 58) + pulse * storm * 34;
+      return { gust, storm };
+    }
+
     function update(dt: number) {
       const keys = keysRef.current;
 
@@ -750,6 +763,13 @@ export const Dust = () => {
         const waterDrag = 0.84 - waterSubmerge * 0.12;
         player.vx *= Math.max(0.65, waterDrag);
         player.vy *= Math.max(0.76, waterDrag + 0.05);
+      }
+
+      const wind = getStormWind(questRef.current);
+      if (wind.storm > 0) {
+        const controlDampen = Math.max(0.28, 1 - Math.abs(player.vx) / (MOVE_SPEED + 40));
+        const waterBoost = inWater ? 1.35 : 1;
+        player.vx += wind.gust * dt * (0.9 + wind.storm * 0.8) * controlDampen * waterBoost;
       }
 
       if (player.vy > 900) player.vy = 900;
@@ -923,10 +943,12 @@ export const Dust = () => {
       player.prevWaterSubmerge = waterSubmerge;
 
       const tool = toolRef.current;
+      const stormWind = getStormWind(questRef.current);
       for (let i = tool.falling.length - 1; i >= 0; i--) {
         const f = tool.falling[i];
         f.vy += GRAVITY * dt * 1.15;
         if (f.vy > 980) f.vy = 980;
+        if (stormWind.storm > 0.02) f.x += stormWind.gust * dt * (0.35 + stormWind.storm * 0.22);
         f.y += f.vy * dt;
 
         const cx = Math.floor(f.x / CELL);
@@ -1200,9 +1222,8 @@ export const Dust = () => {
       }
 
       // incoming-storm readability pass: wind + rain intensifies as tsunami nears/hits
-      const stormCountdown = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 90)) : 0;
-      const stormWave = quest.state === "wave" ? Math.max(0, Math.min(1, 0.45 + quest.waveTime * 0.2)) : 0;
-      const storm = Math.max(stormCountdown, stormWave);
+      const stormWind = getStormWind(quest);
+      const storm = stormWind.storm;
       if (storm > 0.02) {
         const tStorm = performance.now() * 0.001;
         const cloudAlpha = 0.08 + storm * 0.2;
@@ -1213,7 +1234,7 @@ export const Dust = () => {
         ctx.fillRect(0, 0, canvasEl.width, canvasEl.height * 0.56);
 
         const rainCount = Math.floor(45 + storm * 125);
-        const slant = -7 - storm * 8;
+        const slant = -7 - storm * 8 + stormWind.gust * 0.22;
         ctx.strokeStyle = `rgba(192, 228, 255, ${0.12 + storm * 0.24})`;
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -1225,6 +1246,24 @@ export const Dust = () => {
           ctx.lineTo(rx + slant, ry + len);
         }
         ctx.stroke();
+
+        // gust trails for better storm readability
+        const gustAbs = Math.min(1, Math.abs(stormWind.gust) / 90);
+        if (gustAbs > 0.12) {
+          const gustCount = Math.floor(8 + gustAbs * 16);
+          ctx.strokeStyle = `rgba(218, 238, 255, ${0.08 + gustAbs * 0.14})`;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          for (let i = 0; i < gustCount; i++) {
+            const gx = ((i * 113.7 + tStorm * (160 + gustAbs * 200)) % (canvasEl.width + 120)) - 60;
+            const gy = ((i * 47.3 + tStorm * 130) % (canvasEl.height + 60)) - 30;
+            const len = 18 + gustAbs * 22;
+            const skew = Math.sign(stormWind.gust || -1) * (12 + gustAbs * 14);
+            ctx.moveTo(gx, gy);
+            ctx.lineTo(gx + len, gy + skew);
+          }
+          ctx.stroke();
+        }
       }
 
       // ambient dust haze + cinematic grading
@@ -1375,11 +1414,20 @@ export const Dust = () => {
       ctx.strokeStyle = "rgba(170,210,255,0.45)";
       ctx.strokeRect(14, 14, 760, compactHud ? 62 : 110);
 
+      const hudWind = getStormWind(questHud);
+      const windLevel = Math.min(1, Math.abs(hudWind.gust) / 88);
+      const windDir = hudWind.gust >= 0 ? "→" : "←";
+
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
       ctx.fillText(`2D Dust Prototype ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
+      if (hudWind.storm > 0.02) {
+        const windText = `Wind ${windDir} ${Math.round(windLevel * 100)}%`;
+        ctx.fillStyle = windLevel > 0.6 ? "#ffd8bf" : "#cde9ff";
+        ctx.fillText(windText, 28, compactHud ? 82 : 82);
+      }
 
       if (barrierActive || questHud.state === "success" || questHud.state === "fail") {
         const barX = 516;
@@ -1412,8 +1460,10 @@ export const Dust = () => {
       }
 
       if (!compactHud) {
-        ctx.fillText(objective, 28, 82);
-        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
+        const objectiveY = hudWind.storm > 0.02 ? 100 : 82;
+        ctx.fillStyle = "#d8eeff";
+        ctx.fillText(objective, 28, objectiveY);
+        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, objectiveY + 22);
       }
 
       if (questHud.state === "success" || questHud.state === "fail") {
