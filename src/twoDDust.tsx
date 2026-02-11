@@ -18,6 +18,7 @@ const GRID_H = 56;
 const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
+const MAX_DIRT = 50;
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -109,6 +110,12 @@ export const Dust = () => {
 
   const [dirt, setDirt] = useState(0);
   const dirtRef = useRef(0);
+  const audioRef = useRef<{ ctx: AudioContext | null; enabled: boolean; lastMineAt: number; lastPlaceAt: number }>({
+    ctx: null,
+    enabled: false,
+    lastMineAt: 0,
+    lastPlaceAt: 0,
+  });
 
   useEffect(() => {
     dirtRef.current = dirt;
@@ -121,6 +128,81 @@ export const Dust = () => {
     const canvasEl: HTMLCanvasElement = canvas;
     const world = worldRef.current;
     const player = playerRef.current;
+
+    function ensureAudio() {
+      if (audioRef.current.ctx) return audioRef.current.ctx;
+      const Ctx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return null;
+      const ctx = new Ctx();
+      audioRef.current.ctx = ctx;
+      return ctx;
+    }
+
+    function playSuckSound(intensity = 0.5) {
+      const nowMs = performance.now();
+      if (nowMs - audioRef.current.lastMineAt < 26) return;
+      audioRef.current.lastMineAt = nowMs;
+      const ctx = ensureAudio();
+      if (!ctx) return;
+
+      const t0 = ctx.currentTime;
+      const dur = 0.08;
+      const src = ctx.createBufferSource();
+      const length = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) {
+        const p = i / length;
+        const noise = (Math.random() * 2 - 1) * (1 - p);
+        data[i] = noise * (0.25 + intensity * 0.35);
+      }
+      src.buffer = buffer;
+
+      const band = ctx.createBiquadFilter();
+      band.type = "bandpass";
+      band.frequency.setValueAtTime(420 + intensity * 520, t0);
+      band.Q.setValueAtTime(1.1, t0);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.085 + intensity * 0.08, t0 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+      src.connect(band);
+      band.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(t0);
+      src.stop(t0 + dur + 0.02);
+    }
+
+    function playDropSound(intensity = 0.5) {
+      const nowMs = performance.now();
+      if (nowMs - audioRef.current.lastPlaceAt < 34) return;
+      audioRef.current.lastPlaceAt = nowMs;
+      const ctx = ensureAudio();
+      if (!ctx) return;
+
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(220 + intensity * 120, t0);
+      osc.frequency.exponentialRampToValueAtTime(90, t0 + 0.07);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.055 + intensity * 0.06, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+
+      const low = ctx.createBiquadFilter();
+      low.type = "lowpass";
+      low.frequency.setValueAtTime(880, t0);
+
+      osc.connect(low);
+      low.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.1);
+    }
 
     function resize() {
       canvasEl.width = window.innerWidth;
@@ -159,6 +241,9 @@ export const Dust = () => {
     function onPointerDown(e: PointerEvent) {
       mouseRef.current.x = e.clientX;
       mouseRef.current.y = e.clientY;
+
+      const ctx = ensureAudio();
+      if (ctx && ctx.state === "suspended") ctx.resume();
 
       if (e.pointerType === "mouse") {
         if (e.button === 0) mouseRef.current.left = true;
@@ -310,15 +395,16 @@ export const Dust = () => {
           const suctionReach = reach + Math.max(0, tool.blobSize) * 1.4;
           const pick = findNearestDirt(mx, my, suctionReach);
 
-          if (pick) {
+          if (pick && dirtRef.current < MAX_DIRT) {
             const minedX = pick.x;
             const minedY = pick.y;
             setCell(minedX, minedY, 0);
-            setDirt((v) => v + 1);
+            setDirt((v) => Math.min(MAX_DIRT, v + 1));
 
             const speedBoost = (tool.blobSize + tool.carrySize) / 40;
             tool.mineCooldown = Math.max(0.014, 0.042 - speedBoost * 0.02);
             tool.blobPulse = 1;
+            playSuckSound(Math.min(1, 0.35 + speedBoost));
 
             const spawnCount = 1 + Math.floor((tool.blobSize + tool.carrySize) / 10);
             const srcX = minedX * CELL + CELL * 0.5;
@@ -364,6 +450,7 @@ export const Dust = () => {
             setDirt((v) => Math.max(0, v - 1));
             tool.placeCooldown = 0.05;
             tool.blobPulse = Math.max(tool.blobPulse, 0.45);
+            playDropSound(Math.min(1, 0.3 + tool.carrySize / 30));
           }
         }
       }
@@ -532,7 +619,7 @@ export const Dust = () => {
         }
       }
 
-      // ambient dust haze
+      // ambient dust haze + cinematic grading
       const haze = ctx.createRadialGradient(
         canvasEl.width * 0.5,
         canvasEl.height * 0.45,
@@ -541,9 +628,22 @@ export const Dust = () => {
         canvasEl.height * 0.45,
         Math.max(canvasEl.width, canvasEl.height) * 0.75,
       );
-      haze.addColorStop(0, "rgba(225, 185, 120, 0.045)");
+      haze.addColorStop(0, "rgba(225, 185, 120, 0.055)");
       haze.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = haze;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const vignette = ctx.createRadialGradient(
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.45,
+        Math.min(canvasEl.width, canvasEl.height) * 0.15,
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.45,
+        Math.max(canvasEl.width, canvasEl.height) * 0.72,
+      );
+      vignette.addColorStop(0, "rgba(0,0,0,0)");
+      vignette.addColorStop(1, "rgba(0,0,0,0.22)");
+      ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // falling placed dirt clumps
@@ -620,8 +720,17 @@ export const Dust = () => {
       ctx.font = "16px system-ui";
       ctx.fillText("2D Dust Prototype", 28, 38);
       ctx.font = "14px system-ui";
-      ctx.fillText(`Dirt: ${dirtRef.current}`, 28, 60);
-      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left side drag=move, flick up=jump, tap+hold=suck, double-tap+hold=drop", 28, 82);
+      ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 60);
+      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left drag=move/flick jump | Tap+hold suck | Double-tap+hold drop", 28, 82);
+
+      // subtle film grain
+      const t = performance.now() * 0.001;
+      ctx.fillStyle = `rgba(255,255,255,${0.018 + Math.sin(t * 2.7) * 0.004})`;
+      for (let i = 0; i < 130; i++) {
+        const gx = ((i * 73.13 + t * 97) % canvasEl.width + canvasEl.width) % canvasEl.width;
+        const gy = ((i * 51.77 + t * 61) % canvasEl.height + canvasEl.height) % canvasEl.height;
+        ctx.fillRect(gx, gy, 1, 1);
+      }
 
       applyTools(camX, camY, dt);
     }
@@ -665,6 +774,10 @@ export const Dust = () => {
       window.removeEventListener("pointercancel", onPointerUp);
       canvasEl.removeEventListener("contextmenu", preventMenu);
       document.body.style.overscrollBehavior = "";
+      if (audioRef.current.ctx) {
+        audioRef.current.ctx.close();
+        audioRef.current.ctx = null;
+      }
     };
   }, []);
 
