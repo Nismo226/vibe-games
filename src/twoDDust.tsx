@@ -169,6 +169,31 @@ export const Dust = () => {
     const world = worldRef.current;
     const player = playerRef.current;
 
+    function resetLevel() {
+      world.set(generateWorld());
+      player.x = 10 * CELL;
+      player.y = 8 * CELL;
+      player.vx = 0;
+      player.vy = 0;
+      player.onGround = false;
+
+      const quest = questRef.current;
+      quest.state = "explore";
+      quest.timer = 90;
+      quest.dialogElapsed = 0;
+      quest.tsunamiX = -220;
+      quest.waveTime = 0;
+      quest.resultText = "";
+
+      const tool = toolRef.current;
+      tool.falling.length = 0;
+      tool.particles.length = 0;
+      tool.blobSize = 0;
+      tool.carrySize = 0;
+
+      setDirt(0);
+    }
+
     function ensureAudio() {
       if (audioRef.current.ctx) return audioRef.current.ctx;
       const Ctx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -308,6 +333,10 @@ export const Dust = () => {
 
     function onKeyDown(e: KeyboardEvent) {
       keysRef.current[e.key.toLowerCase()] = true;
+      if (e.key.toLowerCase() === "r") {
+        resetLevel();
+        e.preventDefault();
+      }
       if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -469,6 +498,26 @@ export const Dust = () => {
         }
       }
       return score;
+    }
+
+    function findNearestBarrierGap(fromX: number, fromY: number) {
+      const plan = getBarrierPlan();
+      let best: { x: number; y: number; dist: number } | null = null;
+
+      for (let y = plan.y0; y <= plan.y1; y++) {
+        for (let x = plan.x0; x <= plan.x1; x++) {
+          if (!inBounds(x, y)) continue;
+          const c = getCell(x, y);
+          if (c !== 0 && c !== 3) continue;
+
+          const wx = x * CELL + CELL * 0.5;
+          const wy = y * CELL + CELL * 0.5;
+          const dist = Math.hypot(wx - fromX, wy - fromY);
+          if (!best || dist < best.dist) best = { x, y, dist };
+        }
+      }
+
+      return best;
     }
 
     function collidesRect(x: number, y: number, w: number, h: number) {
@@ -1003,6 +1052,7 @@ export const Dust = () => {
       const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
       const barrierPlan = getBarrierPlan();
       const barrierMissing = Math.max(0, BARRIER_GOAL - barrier);
+      const nearestGap = findNearestBarrierGap(player.x + player.w * 0.5, player.y + player.h * 0.5);
 
       // objective beacon + off-screen compass for tribe
       const tribeCenterWX = tribe.x + tribe.w * 0.5;
@@ -1121,6 +1171,57 @@ export const Dust = () => {
         ctx.fillStyle = "#d7ecff";
         ctx.font = "13px system-ui";
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", tx - 112, ty - 30);
+      }
+
+      // build guidance polish: show nearest missing wall slot and direction arrow
+      if ((quest.state === "countdown" || quest.state === "wave") && nearestGap) {
+        const gapX = nearestGap.x * CELL + CELL * 0.5 - camX;
+        const gapY = nearestGap.y * CELL + CELL * 0.5 - camY;
+        const pulse = 0.55 + Math.sin(performance.now() * 0.01) * 0.25;
+
+        ctx.strokeStyle = `rgba(255, 214, 125, ${0.55 + pulse * 0.35})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(gapX, gapY, 7 + pulse * 2.5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = `rgba(255, 223, 145, ${0.24 + pulse * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(gapX, gapY, 4 + pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        const playerSX = player.x + player.w * 0.5 - camX;
+        const playerSY = player.y + player.h * 0.5 - camY;
+        const dxGap = gapX - playerSX;
+        const dyGap = gapY - playerSY;
+        const dGap = Math.max(1, Math.hypot(dxGap, dyGap));
+
+        if (dGap > 26) {
+          const ux = dxGap / dGap;
+          const uy = dyGap / dGap;
+          const arrowX = playerSX + ux * 22;
+          const arrowY = playerSY + uy * 22;
+          const ang = Math.atan2(uy, ux);
+
+          ctx.save();
+          ctx.translate(arrowX, arrowY);
+          ctx.rotate(ang);
+          ctx.fillStyle = "rgba(255, 216, 138, 0.9)";
+          ctx.beginPath();
+          ctx.moveTo(12, 0);
+          ctx.lineTo(-8, -6);
+          ctx.lineTo(-8, 6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          ctx.strokeStyle = "rgba(255, 216, 138, 0.45)";
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(playerSX + ux * 14, playerSY + uy * 14);
+          ctx.lineTo(gapX - ux * 10, gapY - uy * 10);
+          ctx.stroke();
+        }
       }
 
       // removed legacy white wave overlays; keep only block-water visuals
