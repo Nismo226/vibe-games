@@ -52,6 +52,14 @@ function smoothstep(edge0: number, edge1: number, x: number) {
   return t * t * (3 - 2 * t);
 }
 
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
 function generateWorld(): Uint8Array {
   const g = new Uint8Array(GRID_W * GRID_H);
 
@@ -1104,6 +1112,8 @@ export const Dust = () => {
       const stormMood = q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.7 : q.state === "wave" ? Math.min(1, 0.4 + q.waveTime * 0.24) : 0;
       const humidity = Math.min(1, 0.16 + stormMood * 0.62 + waveVisualIntensity * 0.36);
       const gradeLift = 1 - stormMood * 0.18;
+      const cinematicExposure = lerp(1.06, 0.9, stormMood * 0.8 + waveVisualIntensity * 0.2);
+      const highlightBloom = lerp(0.12, 0.2, clamp01((1 - stormMood) * 0.7 + waveVisualIntensity * 0.5));
       const shake = q.state === "wave" ? Math.min(4, 1.2 + q.waveTime * 0.45) : 0;
       const shakeX = shake > 0 ? Math.sin(now * 0.04) * shake : 0;
       const shakeY = shake > 0 ? Math.cos(now * 0.05) * (shake * 0.6) : 0;
@@ -1124,14 +1134,14 @@ export const Dust = () => {
       const camX = cam.x;
       const camY = cam.y;
 
-      const cameraSwayX = Math.sin(now * 0.0013 + player.vx * 0.004) * (0.6 + waveVisualIntensity * 1.6);
-      const cameraSwayY = Math.cos(now * 0.0011 + player.vy * 0.002) * (0.45 + waveVisualIntensity * 1.1);
+      const cameraSwayX = Math.sin(now * 0.0013 + player.vx * 0.004) * (0.7 + waveVisualIntensity * 1.8);
+      const cameraSwayY = Math.cos(now * 0.0011 + player.vy * 0.002) * (0.5 + waveVisualIntensity * 1.25);
       const presentationZoom =
         1 +
         Math.sin(now * 0.00062) * 0.0025 +
-        Math.min(0.018, Math.abs(player.vx) / 5200) +
-        waveVisualIntensity * 0.012 -
-        humidity * 0.003;
+        Math.min(0.02, Math.abs(player.vx) / 5000) +
+        waveVisualIntensity * 0.014 -
+        humidity * 0.004;
       const sunsetWarmth = 0.32 + Math.sin(now * 0.00006) * 0.18 + (1 - stormMood) * 0.12;
       const atmosphereDensity = Math.min(1, 0.24 + humidity * 0.52 + waveVisualIntensity * 0.28);
       const microContrast = 0.92 + (1 - humidity) * 0.18;
@@ -1161,6 +1171,13 @@ export const Dust = () => {
       bg.addColorStop(0.52, skyMid);
       bg.addColorStop(1, skyBottom);
       ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const exposureWash = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      exposureWash.addColorStop(0, `rgba(255, 238, 204, ${0.05 * cinematicExposure})`);
+      exposureWash.addColorStop(0.6, "rgba(255, 238, 204, 0)");
+      exposureWash.addColorStop(1, `rgba(10, 16, 28, ${0.04 + (1 - cinematicExposure) * 0.08})`);
+      ctx.fillStyle = exposureWash;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // solar disc + upper-atmosphere cloud wisps
@@ -1349,6 +1366,12 @@ export const Dust = () => {
               ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
             }
 
+            const contourLight = Math.max(0, lightDirX * (leftAir ? -1 : 0) + lightDirY * (topAir ? -1 : 0));
+            if (contourLight > 0.05) {
+              ctx.fillStyle = `rgba(255, 232, 178, ${0.05 + contourLight * 0.14})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
+            }
+
             const cavityShadow = smoothstep(0, 1, (topAir ? 0 : 0.5) + (leftAir ? 0 : 0.35) + (rightAir ? 0 : 0.35));
             if (cavityShadow > 0.15) {
               ctx.fillStyle = `rgba(26, 16, 9, ${0.05 + cavityShadow * 0.1})`;
@@ -1444,6 +1467,12 @@ export const Dust = () => {
             waterBody.addColorStop(0, "rgba(148, 222, 255, 0.07)");
             waterBody.addColorStop(1, `rgba(8, 32, 86, ${depthShade + localDepth * 0.018})`);
             ctx.fillStyle = waterBody;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
+            const subsurface = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+            subsurface.addColorStop(0, `rgba(214, 248, 255, ${0.04 + (topAir ? 0.07 : 0.02)})`);
+            subsurface.addColorStop(1, `rgba(26, 92, 170, ${0.04 + localDepth * 0.012})`);
+            ctx.fillStyle = subsurface;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const lateralScatter = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
@@ -1943,8 +1972,8 @@ export const Dust = () => {
       const my = mouseRef.current.y + camY;
       const tc = worldToCell(mx, my);
       if (inBounds(tc.x, tc.y)) {
-        ctx.strokeStyle = "rgba(180,220,255,0.9)";
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(180,220,255,0.45)";
+        ctx.lineWidth = 1.5;
         ctx.strokeRect(tc.x * CELL - camX, tc.y * CELL - camY, CELL, CELL);
       }
 
@@ -1995,7 +2024,12 @@ export const Dust = () => {
       const visCols = Math.floor(canvasEl.width / CELL);
       const visRows = Math.floor(canvasEl.height / CELL);
       const visSquares = visCols * visRows;
-      const compactHud = mouseRef.current.left || mouseRef.current.right || mobileRef.current.moveId !== -1;
+      const compactHud =
+        mouseRef.current.left ||
+        mouseRef.current.right ||
+        mobileRef.current.moveId !== -1 ||
+        questHud.state === "countdown" ||
+        questHud.state === "wave";
       const barrierActive = questHud.state === "countdown" || questHud.state === "wave";
 
       const hudH = compactHud ? 58 : 98;
@@ -2200,9 +2234,27 @@ export const Dust = () => {
       }
 
       // subtle scanline pass for retro camera feel
-      ctx.fillStyle = `rgba(6, 12, 24, ${0.042 + humidity * 0.028})`;
+      ctx.fillStyle = `rgba(6, 12, 24, ${0.038 + humidity * 0.024})`;
       for (let y = 0; y < canvasEl.height; y += 4) {
         ctx.fillRect(0, y, canvasEl.width, 1);
+      }
+
+      // soft highlight bloom lift + low-end tone compression pass
+      const toneCurve = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      toneCurve.addColorStop(0, `rgba(255, 236, 202, ${highlightBloom * 0.42})`);
+      toneCurve.addColorStop(0.52, "rgba(255, 236, 202, 0)");
+      toneCurve.addColorStop(1, `rgba(2, 8, 18, ${0.06 + humidity * 0.04})`);
+      ctx.fillStyle = toneCurve;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // tiny ordered-noise dither to reduce flat gradients/banding
+      const ditherAlpha = 0.016 + humidity * 0.01;
+      ctx.fillStyle = `rgba(255,255,255,${ditherAlpha})`;
+      for (let y = 0; y < canvasEl.height; y += 2) {
+        const jitter = ((y * 13.37 + now * 0.19) % 6) - 3;
+        for (let x = ((y / 2) % 2) + jitter; x < canvasEl.width; x += 6) {
+          ctx.fillRect(x, y, 1, 1);
+        }
       }
 
       applyTools(camX, camY, dt);
