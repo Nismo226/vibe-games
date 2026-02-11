@@ -1025,6 +1025,34 @@ export const Dust = () => {
         ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
       }
 
+      // incoming-storm readability pass: wind + rain intensifies as tsunami nears/hits
+      const stormCountdown = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 90)) : 0;
+      const stormWave = quest.state === "wave" ? Math.max(0, Math.min(1, 0.45 + quest.waveTime * 0.2)) : 0;
+      const storm = Math.max(stormCountdown, stormWave);
+      if (storm > 0.02) {
+        const tStorm = performance.now() * 0.001;
+        const cloudAlpha = 0.08 + storm * 0.2;
+        const cloud = ctx.createLinearGradient(0, 0, 0, canvasEl.height * 0.52);
+        cloud.addColorStop(0, `rgba(12, 25, 44, ${cloudAlpha})`);
+        cloud.addColorStop(1, "rgba(12, 25, 44, 0)");
+        ctx.fillStyle = cloud;
+        ctx.fillRect(0, 0, canvasEl.width, canvasEl.height * 0.56);
+
+        const rainCount = Math.floor(45 + storm * 125);
+        const slant = -7 - storm * 8;
+        ctx.strokeStyle = `rgba(192, 228, 255, ${0.12 + storm * 0.24})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < rainCount; i++) {
+          const rx = ((i * 37.17 + tStorm * (220 + storm * 260)) % (canvasEl.width + 90)) - 45;
+          const ry = ((i * 61.93 + tStorm * (420 + storm * 520)) % (canvasEl.height + 120)) - 60;
+          const len = 7 + storm * 10;
+          ctx.moveTo(rx, ry);
+          ctx.lineTo(rx + slant, ry + len);
+        }
+        ctx.stroke();
+      }
+
       // ambient dust haze + cinematic grading
       const haze = ctx.createRadialGradient(
         canvasEl.width * 0.5,
