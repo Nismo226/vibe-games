@@ -1812,6 +1812,12 @@ export const Dust = () => {
         ctx.fillRect(gx, gy, 1, 1);
       }
 
+      // subtle scanline pass for retro camera feel
+      ctx.fillStyle = "rgba(6, 12, 24, 0.055)";
+      for (let y = 0; y < canvasEl.height; y += 4) {
+        ctx.fillRect(0, y, canvasEl.width, 1);
+      }
+
       applyTools(camX, camY, dt);
     }
 
