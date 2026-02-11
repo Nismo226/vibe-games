@@ -21,7 +21,7 @@ const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.2";
+const GAME_VERSION = "v0.1.3";
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -753,6 +753,23 @@ export const Dust = () => {
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
+      // parallax atmosphere (holistic polish)
+      const tSky = performance.now() * 0.00008;
+      const ridgeA = canvasEl.height * 0.44;
+      const ridgeB = canvasEl.height * 0.56;
+      ctx.fillStyle = "rgba(34,64,96,0.35)";
+      for (let i = -1; i <= 8; i++) {
+        const x = i * 170 - ((camX * 0.12 + tSky * 400) % 170);
+        const h = 24 + ((i * 37) % 42);
+        ctx.fillRect(x, ridgeA - h, 210, h);
+      }
+      ctx.fillStyle = "rgba(18,40,62,0.42)";
+      for (let i = -1; i <= 7; i++) {
+        const x = i * 220 - ((camX * 0.2 + tSky * 520) % 220);
+        const h = 36 + ((i * 23) % 56);
+        ctx.fillRect(x, ridgeB - h, 260, h);
+      }
+
       // world
       const startX = Math.floor(camX / CELL);
       const startY = Math.floor(camY / CELL);
@@ -853,7 +870,8 @@ export const Dust = () => {
 
       // tribe character (first rescue target)
       const tx = tribe.x - camX;
-      const ty = tribe.y - camY;
+      const tribeBob = Math.sin(performance.now() * 0.005) * 1.5;
+      const ty = tribe.y - camY + tribeBob;
       ctx.fillStyle = "#ffd08a";
       ctx.fillRect(tx + 3, ty, 6, 6);
       ctx.fillStyle = "#8f4f2a";
@@ -1004,6 +1022,16 @@ export const Dust = () => {
       if (!compactHud) {
         ctx.fillText(objective, 28, 82);
         ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
+      }
+
+      if (questHud.state === "success" || questHud.state === "fail") {
+        ctx.fillStyle = questHud.state === "success" ? "rgba(46,144,94,0.82)" : "rgba(157,58,58,0.86)";
+        ctx.fillRect(canvasEl.width * 0.5 - 170, 18, 340, 34);
+        ctx.strokeStyle = "rgba(230,240,255,0.55)";
+        ctx.strokeRect(canvasEl.width * 0.5 - 170, 18, 340, 34);
+        ctx.fillStyle = "#eef7ff";
+        ctx.font = "bold 15px system-ui";
+        ctx.fillText(questHud.state === "success" ? "TRIBE SAVED" : "TRIBE LOST", canvasEl.width * 0.5 - 56, 40);
       }
 
       // mobile left joystick (movement only)
