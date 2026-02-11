@@ -1363,6 +1363,12 @@ export const Dust = () => {
       const visRows = Math.floor(canvasEl.height / CELL);
       const visSquares = visCols * visRows;
       const compactHud = mouseRef.current.left || mouseRef.current.right || mobileRef.current.moveId !== -1;
+      const barrierStrength = tribeBarrierStrength();
+      const barrierRatio = Math.max(0, Math.min(1, barrierStrength / BARRIER_GOAL));
+      const barrierActive = questHud.state === "countdown" || questHud.state === "wave";
+      const countdownProgress = questHud.state === "countdown" ? Math.max(0, Math.min(1, 1 - questHud.timer / 90)) : questHud.state === "wave" ? 1 : 0;
+      const expectedBarrier = Math.floor(BARRIER_GOAL * (0.2 + countdownProgress * 0.75));
+      const urgencyGap = barrierActive ? Math.max(0, expectedBarrier - barrierStrength) : 0;
 
       ctx.fillStyle = "rgba(10,18,30,0.72)";
       ctx.fillRect(14, 14, 760, compactHud ? 62 : 110);
@@ -1374,6 +1380,36 @@ export const Dust = () => {
       ctx.fillText(`2D Dust Prototype ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
+
+      if (barrierActive || questHud.state === "success" || questHud.state === "fail") {
+        const barX = 516;
+        const barY = 44;
+        const barW = 238;
+        const barH = 12;
+        const fillW = Math.round(barW * barrierRatio);
+        const pulse = urgencyGap > 0 ? 0.55 + Math.sin(performance.now() * 0.012) * 0.45 : 0.25;
+
+        ctx.fillStyle = "rgba(8,14,24,0.85)";
+        ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+        ctx.fillStyle = "rgba(165,205,240,0.18)";
+        ctx.fillRect(barX, barY, barW, barH);
+        const barGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+        barGrad.addColorStop(0, urgencyGap > 0 ? "rgba(243,132,112,0.9)" : "rgba(117,219,174,0.85)");
+        barGrad.addColorStop(1, urgencyGap > 0 ? "rgba(255,191,149,0.92)" : "rgba(85,186,255,0.9)");
+        ctx.fillStyle = barGrad;
+        ctx.fillRect(barX, barY, fillW, barH);
+        ctx.strokeStyle = `rgba(206,232,255,${0.45 + pulse * 0.35})`;
+        ctx.strokeRect(barX - 0.5, barY - 0.5, barW + 1, barH + 1);
+
+        ctx.fillStyle = "#dff2ff";
+        ctx.font = "12px system-ui";
+        ctx.fillText(`Barrier ${barrierStrength}/${BARRIER_GOAL}`, barX, barY - 6);
+
+        if (barrierActive && urgencyGap > 0) {
+          ctx.fillStyle = `rgba(255,174,155,${0.72 + pulse * 0.22})`;
+          ctx.fillText(`Need +${urgencyGap} more soon`, barX + 132, barY - 6);
+        }
+      }
 
       if (!compactHud) {
         ctx.fillText(objective, 28, 82);
