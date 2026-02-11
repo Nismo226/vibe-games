@@ -26,7 +26,7 @@ const JUMP_VEL = -460;
 const COYOTE_TIME = 0.11;
 const JUMP_BUFFER_TIME = 0.12;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.7";
+const GAME_VERSION = "v0.1.8";
 const BARRIER_GOAL = 16;
 const STEP_HEIGHT = 10;
 
@@ -1121,6 +1121,19 @@ export const Dust = () => {
       const camX = cam.x;
       const camY = cam.y;
 
+      const cameraSwayX = Math.sin(now * 0.0013 + player.vx * 0.004) * (0.6 + waveVisualIntensity * 1.6);
+      const cameraSwayY = Math.cos(now * 0.0011 + player.vy * 0.002) * (0.45 + waveVisualIntensity * 1.1);
+      const presentationZoom =
+        1 +
+        Math.sin(now * 0.00062) * 0.0025 +
+        Math.min(0.018, Math.abs(player.vx) / 5200) +
+        waveVisualIntensity * 0.012;
+
+      ctx.save();
+      ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
+      ctx.scale(presentationZoom, presentationZoom);
+      ctx.translate(-canvasEl.width * 0.5 + cameraSwayX, -canvasEl.height * 0.5 + cameraSwayY);
+
       // cinematic lighting basis (visual only)
       const sunArc = now * 0.00012;
       const lightDirX = Math.cos(sunArc * 2.3 + 0.45);
@@ -1138,6 +1151,19 @@ export const Dust = () => {
       bg.addColorStop(1, skyBottom);
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // upper-atmosphere cloud wisps
+      const cloudBand = ctx.createLinearGradient(0, 0, 0, canvasEl.height * 0.36);
+      cloudBand.addColorStop(0, `rgba(176, 210, 236, ${0.06 - stormMood * 0.025})`);
+      cloudBand.addColorStop(1, "rgba(176, 210, 236, 0)");
+      ctx.fillStyle = cloudBand;
+      for (let i = 0; i < 7; i++) {
+        const cx = ((i * 240 + now * (0.03 + i * 0.01) - camX * 0.08) % (canvasEl.width + 380)) - 190;
+        const cy = 38 + (i % 3) * 26 + Math.sin(now * 0.0008 + i * 1.6) * 8;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 120 + (i % 2) * 36, 30 + (i % 3) * 8, 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // parallax atmosphere (painted dune layers)
       const tSky = now * 0.00008;
@@ -1202,6 +1228,16 @@ export const Dust = () => {
             warmLight.addColorStop(1, "rgba(60, 40, 22, 0.2)");
             ctx.fillStyle = warmLight;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            // subsurface-ish warm scatter near lit top edges
+            if (topAir) {
+              const sss = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              sss.addColorStop(0, "rgba(255, 226, 162, 0.18)");
+              sss.addColorStop(0.45, "rgba(255, 202, 132, 0.07)");
+              sss.addColorStop(1, "rgba(0,0,0,0)");
+              ctx.fillStyle = sss;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             const ao = (topAir ? 0 : 0.55) + (leftAir ? 0 : 0.35) + (rightAir ? 0 : 0.25) + (bottomAir ? 0 : 0.4);
             if (ao > 0.2) {
@@ -1271,6 +1307,12 @@ export const Dust = () => {
             inner.addColorStop(1, "rgba(8,60,132,0.24)");
             ctx.fillStyle = inner;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const streak = Math.sin(t * 1.4 + x * 0.55 - y * 0.22) * 0.5 + 0.5;
+            if (streak > 0.66) {
+              ctx.fillStyle = `rgba(230, 248, 255, ${0.08 + streak * 0.1})`;
+              ctx.fillRect(sx + 1, sy + 2 + (streak % 1), CELL - 3, 1);
+            }
 
             const fresnel = (topAir ? 0.22 : 0.08) + (leftAir || rightAir ? 0.07 : 0);
             if (fresnel > 0.06) {
@@ -1769,6 +1811,8 @@ export const Dust = () => {
       ctx.fillStyle = playerWater > 0.12 ? "#bfe4ff" : "#cfe9ff";
       ctx.fillRect(player.x - camX, player.y - camY, player.w, player.h);
 
+      ctx.restore();
+
       // HUD (auto-compact while actively playing/building)
       const questHud = questRef.current;
       let objective = "Objective: Reach the far-right tribe.";
@@ -1792,18 +1836,19 @@ export const Dust = () => {
       const hudH = compactHud ? 56 : 94;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.5)");
-      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.4)");
+      hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.44)");
+      hudGrad.addColorStop(0.45, "rgba(8, 16, 28, 0.4)");
+      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.34)");
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
-      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.13)");
+      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.11)");
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
-      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(18, 18, hudW, hudH);
       ctx.fillStyle = hudGrad;
       ctx.fillRect(14, 14, hudW, hudH);
       ctx.fillStyle = hudGlow;
       ctx.fillRect(14, 14, hudW, hudH);
-      ctx.strokeStyle = "rgba(170,210,255,0.35)";
+      ctx.strokeStyle = "rgba(170,210,255,0.28)";
       ctx.strokeRect(14, 14, hudW, hudH);
 
       const hudWind = getStormWind(questHud);
@@ -1896,9 +1941,9 @@ export const Dust = () => {
       const restartX = canvasEl.width - restartW - 16;
       const restartY = 18;
       const restartGrad = ctx.createLinearGradient(restartX, restartY, restartX, restartY + restartH);
-      restartGrad.addColorStop(0, "rgba(28, 56, 86, 0.9)");
-      restartGrad.addColorStop(1, "rgba(12, 30, 48, 0.92)");
-      ctx.fillStyle = "rgba(0,0,0,0.24)";
+      restartGrad.addColorStop(0, "rgba(28, 56, 86, 0.82)");
+      restartGrad.addColorStop(1, "rgba(12, 30, 48, 0.86)");
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.fillRect(restartX + 2, restartY + 2, restartW, restartH);
       ctx.fillStyle = restartGrad;
       ctx.fillRect(restartX, restartY, restartW, restartH);
@@ -1914,7 +1959,7 @@ export const Dust = () => {
       const joyCenterY = canvasEl.height - 108;
       const joyR = 60;
 
-      ctx.fillStyle = "rgba(9,17,30,0.42)";
+      ctx.fillStyle = "rgba(9,17,30,0.3)";
       ctx.beginPath();
       ctx.arc(joyCenterX, joyCenterY, joyR + 10, 0, Math.PI * 2);
       ctx.fill();
@@ -1936,9 +1981,9 @@ export const Dust = () => {
       const toggleY = canvasEl.height - toggleH - 52;
 
       const toggleGrad = ctx.createLinearGradient(toggleX, toggleY, toggleX, toggleY + toggleH);
-      toggleGrad.addColorStop(0, "rgba(22, 42, 68, 0.9)");
-      toggleGrad.addColorStop(1, "rgba(10, 20, 34, 0.9)");
-      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      toggleGrad.addColorStop(0, "rgba(22, 42, 68, 0.82)");
+      toggleGrad.addColorStop(1, "rgba(10, 20, 34, 0.84)");
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
       ctx.fillRect(toggleX + 2, toggleY + 2, toggleW, toggleH);
       ctx.fillStyle = toggleGrad;
       ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
