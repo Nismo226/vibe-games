@@ -12,6 +12,8 @@ type Player = {
   onGround: boolean;
 };
 
+type QuestState = "explore" | "dialog" | "countdown" | "success" | "fail";
+
 const CELL = 12;
 const GRID_W = 120;
 const GRID_H = 56;
@@ -80,6 +82,22 @@ export const Dust = () => {
     w: 10,
     h: 18,
     onGround: false,
+  });
+  const tribeRef = useRef({ x: (GRID_W - 14) * CELL, y: 30 * CELL, w: 12, h: 18 });
+  const questRef = useRef<{
+    state: QuestState;
+    timer: number;
+    dialogElapsed: number;
+    tsunamiX: number;
+    tsunamiSpeed: number;
+    resultText: string;
+  }>({
+    state: "explore",
+    timer: 60,
+    dialogElapsed: 0,
+    tsunamiX: GRID_W * CELL + 220,
+    tsunamiSpeed: 72,
+    resultText: "",
   });
 
   const keysRef = useRef<Record<string, boolean>>({});
@@ -310,6 +328,21 @@ export const Dust = () => {
       world[idx(x, y)] = v;
     }
 
+    function tribeBarrierStrength() {
+      const tribe = tribeRef.current;
+      const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+      const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
+      let score = 0;
+
+      // count dirt blocks in front-right of tribe as "barrier"
+      for (let x = tcx + 1; x <= tcx + 5; x++) {
+        for (let y = tcy - 5; y <= tcy + 2; y++) {
+          if (inBounds(x, y) && getCell(x, y) === 1) score++;
+        }
+      }
+      return score;
+    }
+
     function collidesRect(x: number, y: number, w: number, h: number) {
       const x0 = Math.floor(x / CELL);
       const y0 = Math.floor(y / CELL);
@@ -505,6 +538,48 @@ export const Dust = () => {
         player.y = nextY;
       }
 
+      const quest = questRef.current;
+      const tribe = tribeRef.current;
+      const playerCenterX = player.x + player.w * 0.5;
+      const playerCenterY = player.y + player.h * 0.5;
+      const tribeCenterX = tribe.x + tribe.w * 0.5;
+      const tribeCenterY = tribe.y + tribe.h * 0.5;
+      const nearTribe = Math.hypot(playerCenterX - tribeCenterX, playerCenterY - tribeCenterY) < 70;
+
+      if (quest.state === "explore" && nearTribe) {
+        quest.state = "dialog";
+        quest.dialogElapsed = 0;
+      }
+
+      if (quest.state === "dialog") {
+        quest.dialogElapsed += dt;
+        if (quest.dialogElapsed >= 2.2) {
+          quest.state = "countdown";
+          quest.timer = 60;
+          quest.tsunamiX = GRID_W * CELL + 180;
+        }
+      } else if (quest.state === "countdown") {
+        quest.timer = Math.max(0, quest.timer - dt);
+        quest.tsunamiX -= quest.tsunamiSpeed * dt;
+
+        const waveFrontX = quest.tsunamiX;
+        const barrier = tribeBarrierStrength();
+        const waveReachedTribe = waveFrontX <= tribe.x + tribe.w + CELL;
+
+        if (waveReachedTribe) {
+          if (barrier >= 16) {
+            quest.state = "success";
+            quest.resultText = "Barrier held! The tribe is safe.";
+          } else {
+            quest.state = "fail";
+            quest.resultText = "The wave broke through. Build a bigger wall and try again.";
+          }
+        } else if (quest.timer <= 0) {
+          quest.state = "success";
+          quest.resultText = "You held long enough. The tsunami passed.";
+        }
+      }
+
       // clamp in world
       player.x = Math.max(0, Math.min(player.x, GRID_W * CELL - player.w));
       player.y = Math.max(0, Math.min(player.y, GRID_H * CELL - player.h));
@@ -619,6 +694,54 @@ export const Dust = () => {
         }
       }
 
+      const tribe = tribeRef.current;
+      const quest = questRef.current;
+
+      // tribe character (first rescue target)
+      const tx = tribe.x - camX;
+      const ty = tribe.y - camY;
+      ctx.fillStyle = "#ffd08a";
+      ctx.fillRect(tx + 3, ty, 6, 6);
+      ctx.fillStyle = "#8f4f2a";
+      ctx.fillRect(tx + 2, ty + 6, 8, 10);
+      ctx.fillStyle = "#f4e4d2";
+      ctx.fillRect(tx + 4, ty + 8, 4, 2);
+
+      if (quest.state === "explore") {
+        ctx.fillStyle = "rgba(20,28,45,0.86)";
+        ctx.fillRect(tx - 52, ty - 36, 140, 24);
+        ctx.fillStyle = "#d7ecff";
+        ctx.font = "13px system-ui";
+        ctx.fillText("Tribe ahead → Find and talk", tx - 46, ty - 20);
+      }
+
+      if (quest.state === "dialog") {
+        ctx.fillStyle = "rgba(20,28,45,0.9)";
+        ctx.fillRect(tx - 120, ty - 56, 290, 40);
+        ctx.fillStyle = "#d7ecff";
+        ctx.font = "13px system-ui";
+        ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", tx - 112, ty - 30);
+      }
+
+      if (quest.state === "countdown" || quest.state === "success" || quest.state === "fail") {
+        // tsunami wall incoming from the far right
+        const waveX = quest.tsunamiX - camX;
+        const waveW = canvasEl.width - waveX + 20;
+        if (waveW > 0) {
+          const waveGrad = ctx.createLinearGradient(waveX, 0, waveX + 140, 0);
+          waveGrad.addColorStop(0, "rgba(122,199,255,0.35)");
+          waveGrad.addColorStop(1, "rgba(24,117,196,0.62)");
+          ctx.fillStyle = waveGrad;
+          ctx.fillRect(waveX, 0, waveW, canvasEl.height);
+
+          ctx.fillStyle = "rgba(210,242,255,0.35)";
+          for (let i = 0; i < 16; i++) {
+            const y = (i * 43 + performance.now() * 0.05) % canvasEl.height;
+            ctx.fillRect(waveX + Math.sin((i + performance.now() * 0.002)) * 8, y, 38, 2);
+          }
+        }
+      }
+
       // ambient dust haze + cinematic grading
       const haze = ctx.createRadialGradient(
         canvasEl.width * 0.5,
@@ -712,16 +835,24 @@ export const Dust = () => {
 
       // HUD
       ctx.fillStyle = "rgba(10,18,30,0.72)";
-      ctx.fillRect(14, 14, 360, 78);
+      ctx.fillRect(14, 14, 760, 110);
       ctx.strokeStyle = "rgba(170,210,255,0.45)";
-      ctx.strokeRect(14, 14, 360, 78);
+      ctx.strokeRect(14, 14, 760, 110);
+
+      const questHud = questRef.current;
+      let objective = "Objective: Reach the far-right tribe.";
+      if (questHud.state === "dialog") objective = "Objective: Listen to the elder...";
+      if (questHud.state === "countdown") objective = `Objective: Build a sand barrier! Time: ${questHud.timer.toFixed(1)}s`;
+      if (questHud.state === "success") objective = `Success: ${questHud.resultText}`;
+      if (questHud.state === "fail") objective = `Failed: ${questHud.resultText}`;
 
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
-      ctx.fillText("2D Dust Prototype", 28, 38);
+      ctx.fillText("2D Dust Prototype - Level 1: Tsunami Warning", 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 60);
-      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left drag=move/flick jump | Tap+hold suck | Double-tap+hold drop", 28, 82);
+      ctx.fillText(objective, 28, 82);
+      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left drag=move/flick jump | Tap+hold suck | Double-tap+hold drop", 28, 104);
 
       // subtle film grain
       const t = performance.now() * 0.001;
