@@ -56,6 +56,10 @@ function clamp01(v: number) {
   return Math.max(0, Math.min(1, v));
 }
 
+function clamp255(v: number) {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
@@ -1180,10 +1184,12 @@ export const Dust = () => {
       const speedBlur = clamp01(Math.abs(player.vx) / 420 + (Math.abs(player.vy) / 900) * 0.25);
       const impactPulse = q.state === "wave" ? clamp01(q.waveTime * 0.35) : 0;
       const cinematicAberration = clamp01(chromaPulse + waveVisualIntensity * 0.02 + speedBlur * 0.015);
+      const goldenHour = clamp01(0.56 + Math.sin(now * 0.000045 + 0.8) * 0.44);
+      const polarizer = clamp01(0.35 + (1 - humidity) * 0.48 + goldenHour * 0.16 - waveVisualIntensity * 0.12);
       const atmosphereTint = {
-        r: Math.floor(134 + (1 - stormMood) * 36 + sunsetWarmth * 24),
-        g: Math.floor(170 + (1 - stormMood) * 22 + sunsetWarmth * 14),
-        b: Math.floor(206 + (1 - stormMood) * 16),
+        r: clamp255(128 + (1 - stormMood) * 34 + sunsetWarmth * 28 + goldenHour * 14),
+        g: clamp255(162 + (1 - stormMood) * 24 + sunsetWarmth * 16 + goldenHour * 8),
+        b: clamp255(196 + (1 - stormMood) * 26 + polarizer * 12),
       };
 
       ctx.save();
@@ -1354,7 +1360,12 @@ export const Dust = () => {
             const coolShadow = Math.floor(8 + (1 - duneBand) * 10);
             const warmSand = Math.floor(18 + sunsetWarmth * 22);
             const mineralTint = Math.floor((hash2(x * 7 + 5, y * 7 + 13) - 0.5) * 10);
-            ctx.fillStyle = `rgb(${Math.floor((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint) * microContrast * sandAlbedoBoost)}, ${Math.floor((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5) * microContrast * sandAlbedoBoost)}, ${Math.floor((base - 20 - coolShadow + mineralTint * 0.3) * microContrast * (0.94 + (sandAlbedoBoost - 1) * 0.5))})`;
+            const strat = Math.sin((x * 0.23 + y * 1.2) + now * 0.00055) * 0.5 + 0.5;
+            const dryHighlight = (1 - humidity) * (0.8 + goldenHour * 0.3);
+            const sandR = clamp255((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint + strat * 8 + dryHighlight * 10) * microContrast * sandAlbedoBoost);
+            const sandG = clamp255((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5 + strat * 5 + dryHighlight * 6) * microContrast * sandAlbedoBoost);
+            const sandB = clamp255((base - 20 - coolShadow + mineralTint * 0.3 + strat * 2 - dryHighlight * 3) * microContrast * (0.94 + (sandAlbedoBoost - 1) * 0.5));
+            ctx.fillStyle = `rgb(${sandR}, ${sandG}, ${sandB})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const windSheen = Math.sin(now * 0.0018 + x * 0.92 - y * 0.34) * 0.5 + 0.5;
@@ -1531,7 +1542,12 @@ export const Dust = () => {
             const depthTint = localDepth * 5;
             const cyanLift = Math.floor((1 - stormMood) * 12 + sunsetWarmth * 6);
             const coastalGreen = Math.floor(6 + (1 - stormMood) * 8 + Math.max(0, 2 - localDepth) * 2);
-            ctx.fillStyle = `rgba(${22 + Math.floor(wn * 16)}, ${Math.floor((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen) * waterLuminanceLift)}, ${Math.floor((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3)) * (0.94 + (waterLuminanceLift - 1) * 0.8))}, ${0.76 + wavelet * 0.09 + (waterLuminanceLift - 0.84) * 0.14 + waterClarity * 0.08})`;
+            const brineShift = Math.sin(now * 0.0012 + x * 0.18 + y * 0.12) * 0.5 + 0.5;
+            const waterR = clamp255(18 + Math.floor(wn * 14) + brineShift * 7 - localDepth * 2 + polarizer * 6);
+            const waterG = clamp255((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen + brineShift * 10) * waterLuminanceLift);
+            const waterB = clamp255((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3) + brineShift * 12 + polarizer * 8) * (0.94 + (waterLuminanceLift - 1) * 0.8));
+            const waterA = clamp01(0.76 + wavelet * 0.09 + (waterLuminanceLift - 0.84) * 0.14 + waterClarity * 0.08 + brineShift * 0.03);
+            ctx.fillStyle = `rgba(${waterR}, ${waterG}, ${waterB}, ${waterA})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const sedimentMix =
@@ -2404,8 +2420,8 @@ export const Dust = () => {
       const restartX = canvasEl.width - restartW - 16;
       const restartY = 18;
       const restartGrad = ctx.createLinearGradient(restartX, restartY, restartX, restartY + restartH);
-      restartGrad.addColorStop(0, "rgba(28, 56, 86, 0.82)");
-      restartGrad.addColorStop(1, "rgba(12, 30, 48, 0.86)");
+      restartGrad.addColorStop(0, `rgba(36, 70, 108, ${0.78 + uiCalm * 0.08})`);
+      restartGrad.addColorStop(1, `rgba(10, 24, 40, ${0.86 + (1 - uiCalm) * 0.06})`);
       ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.fillRect(restartX + 2, restartY + 2, restartW, restartH);
       ctx.fillStyle = restartGrad;
@@ -2444,8 +2460,8 @@ export const Dust = () => {
       const toggleY = canvasEl.height - toggleH - 52;
 
       const toggleGrad = ctx.createLinearGradient(toggleX, toggleY, toggleX, toggleY + toggleH);
-      toggleGrad.addColorStop(0, "rgba(22, 42, 68, 0.82)");
-      toggleGrad.addColorStop(1, "rgba(10, 20, 34, 0.84)");
+      toggleGrad.addColorStop(0, `rgba(26, 50, 80, ${0.8 + uiCalm * 0.08})`);
+      toggleGrad.addColorStop(1, `rgba(8, 18, 32, ${0.84 + (1 - uiCalm) * 0.06})`);
       ctx.fillStyle = "rgba(0,0,0,0.16)";
       ctx.fillRect(toggleX + 2, toggleY + 2, toggleW, toggleH);
       ctx.fillStyle = toggleGrad;
@@ -2550,6 +2566,13 @@ export const Dust = () => {
       finalTone.addColorStop(1, `rgba(14, 28, 58, ${0.03 + cinematicGradeStrength * 0.045 + impactPulse * 0.02})`);
       ctx.fillStyle = finalTone;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const anamorphic = ctx.createLinearGradient(0, canvasEl.height * 0.32, canvasEl.width, canvasEl.height * 0.32);
+      anamorphic.addColorStop(0, `rgba(128, 188, 255, ${0.012 + polarizer * 0.022})`);
+      anamorphic.addColorStop(0.5, `rgba(255, 228, 184, ${0.014 + goldenHour * 0.025 + highlightBloom * 0.05})`);
+      anamorphic.addColorStop(1, `rgba(116, 170, 255, ${0.01 + polarizer * 0.02})`);
+      ctx.fillStyle = anamorphic;
+      ctx.fillRect(0, canvasEl.height * 0.22, canvasEl.width, canvasEl.height * 0.2);
 
       // subtle film-gate flicker around frame to sell camera presentation
       const gatePulse = 0.02 + Math.sin(now * 0.009) * 0.008 + cinematicFocus * 0.012;
