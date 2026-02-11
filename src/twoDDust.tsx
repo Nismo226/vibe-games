@@ -1165,6 +1165,9 @@ export const Dust = () => {
       const wetLens = clamp01(humidity * 0.7 + waveVisualIntensity * 0.45);
       const airGlow = clamp01((1 - stormMood) * 0.75 + sunsetWarmth * 0.2);
       const uiHighlight = 0.2 + uiCalm * 0.3;
+      const cinematicToe = 0.04 + humidity * 0.045 + waveVisualIntensity * 0.03;
+      const chromaPulse = 0.01 + (Math.sin(now * 0.0018) * 0.5 + 0.5) * 0.01;
+      const skylineScatter = clamp01(0.14 + (1 - stormMood) * 0.24 + sunsetWarmth * 0.16);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1182,15 +1185,21 @@ export const Dust = () => {
       // background
       const dayToStorm = Math.min(1, stormMood * 0.9 + waveVisualIntensity * 0.5);
       const heatHueShift = Math.sin(now * 0.00017) * 0.5 + 0.5;
-      const skyTop = `rgba(${10 + Math.floor(dayToStorm * 16)}, ${24 + Math.floor(dayToStorm * 14)}, ${54 + Math.floor(dayToStorm * 24)}, 1)`;
-      const skyMid = `rgba(${30 + Math.floor(dayToStorm * 12 + sunsetWarmth * 11)}, ${70 + Math.floor(dayToStorm * 10 + sunsetWarmth * 8)}, ${112 + Math.floor(dayToStorm * 14)}, 1)`;
-      const skyBottom = `rgba(${56 + Math.floor(dayToStorm * 12 + heatHueShift * 8 + sunsetWarmth * 16)}, ${96 + Math.floor(dayToStorm * 8 + heatHueShift * 6)}, ${104 + Math.floor(dayToStorm * 10)}, 1)`;
+      const skyTop = `rgba(${8 + Math.floor(dayToStorm * 15)}, ${20 + Math.floor(dayToStorm * 13)}, ${50 + Math.floor(dayToStorm * 22)}, 1)`;
+      const skyMid = `rgba(${34 + Math.floor(dayToStorm * 12 + sunsetWarmth * 13)}, ${76 + Math.floor(dayToStorm * 9 + sunsetWarmth * 11)}, ${122 + Math.floor(dayToStorm * 14)}, 1)`;
+      const skyBottom = `rgba(${66 + Math.floor(dayToStorm * 10 + heatHueShift * 10 + sunsetWarmth * 19)}, ${110 + Math.floor(dayToStorm * 7 + heatHueShift * 8)}, ${124 + Math.floor(dayToStorm * 8)}, 1)`;
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       bg.addColorStop(0, skyTop);
       bg.addColorStop(0.52, skyMid);
       bg.addColorStop(1, skyBottom);
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const upperScatter = ctx.createLinearGradient(0, 0, 0, canvasEl.height * 0.45);
+      upperScatter.addColorStop(0, `rgba(162, 208, 255, ${0.03 + skylineScatter * 0.08})`);
+      upperScatter.addColorStop(1, "rgba(162, 208, 255, 0)");
+      ctx.fillStyle = upperScatter;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height * 0.5);
 
       const exposureWash = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       exposureWash.addColorStop(0, `rgba(255, 238, 204, ${0.05 * cinematicExposure})`);
@@ -1307,6 +1316,7 @@ export const Dust = () => {
             const windSheen = Math.sin(now * 0.0018 + x * 0.92 - y * 0.34) * 0.5 + 0.5;
             const microSlope = Math.sin((x * 1.8 + y * 0.7) * 0.26 + now * 0.0013) * 0.5 + 0.5;
             const roughness = hash2(x * 5 + 3, y * 5 + 11);
+            const slopeMask = clamp01(0.3 + (topAir ? 0.36 : 0) + (leftAir ? 0.14 : 0) + (rightAir ? 0.08 : 0));
             ctx.fillStyle = `rgba(255, 228, 170, ${0.035 + windSheen * 0.045 + microSlope * 0.025})`;
             ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
             if (roughness > 0.45) {
@@ -1326,6 +1336,12 @@ export const Dust = () => {
             warmLight.addColorStop(1, "rgba(60, 40, 22, 0.2)");
             ctx.fillStyle = warmLight;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const crestSpec = Math.sin(now * 0.0015 + x * 1.2 - y * 0.45) * 0.5 + 0.5;
+            if (slopeMask > 0.32 && crestSpec > 0.42) {
+              ctx.fillStyle = `rgba(255, 236, 186, ${0.03 + crestSpec * 0.08 + airGlow * 0.04})`;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, 2);
+            }
 
             const duneShadow = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
             duneShadow.addColorStop(0, "rgba(255, 230, 172, 0)");
@@ -1479,6 +1495,15 @@ export const Dust = () => {
             refractionBand.addColorStop(1, "rgba(28, 86, 158, 0.08)");
             ctx.fillStyle = refractionBand;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const shallow = Math.max(0, 3 - localDepth) / 3;
+            if (shallow > 0.05) {
+              const shoreTint = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              shoreTint.addColorStop(0, `rgba(196, 238, 255, ${0.04 + shallow * 0.08})`);
+              shoreTint.addColorStop(1, `rgba(88, 166, 214, ${0.05 + shallow * 0.08})`);
+              ctx.fillStyle = shoreTint;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             const inner = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
             inner.addColorStop(0, "rgba(205,242,255,0.2)");
@@ -1998,6 +2023,13 @@ export const Dust = () => {
       ctx.fillStyle = warmLift;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
+      const toeCurve = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      toeCurve.addColorStop(0, `rgba(255, 230, 194, ${cinematicToe * 0.35})`);
+      toeCurve.addColorStop(0.6, "rgba(0,0,0,0)");
+      toeCurve.addColorStop(1, `rgba(2, 8, 18, ${cinematicToe})`);
+      ctx.fillStyle = toeCurve;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
       // gentle contrast curve pass
       const gradeStrength = 0.05 + stormMood * 0.06;
       const grade = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
@@ -2320,7 +2352,7 @@ export const Dust = () => {
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // very subtle edge chromatic separation for lens character
-      const aberration = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.008;
+      const aberration = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.008 + chromaPulse;
       ctx.fillStyle = `rgba(110, 170, 255, ${aberration})`;
       ctx.fillRect(0, 0, 2, canvasEl.height);
       ctx.fillStyle = `rgba(255, 136, 124, ${aberration * 0.9})`;
