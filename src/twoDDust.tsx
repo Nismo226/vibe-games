@@ -1166,7 +1166,8 @@ export const Dust = () => {
         Math.min(0.026, Math.abs(player.vx) / 4300) +
         Math.min(0.009, Math.abs(player.vy) / 9000) +
         waveVisualIntensity * 0.016 -
-        humidity * 0.004;
+        humidity * 0.004 +
+        clamp01(Math.abs(player.vx) / 340 + Math.abs(player.vy) / 860) * 0.003;
       const sunsetWarmth = 0.32 + Math.sin(now * 0.00006) * 0.18 + (1 - stormMood) * 0.12;
       const atmosphereDensity = Math.min(1, 0.24 + humidity * 0.52 + waveVisualIntensity * 0.28);
       const microContrast = 0.92 + (1 - humidity) * 0.18;
@@ -1219,6 +1220,9 @@ export const Dust = () => {
       const sandBackscatter = clamp01(0.18 + sunsetWarmth * 0.4 + (1 - stormMood) * 0.28);
       const waterSurfaceEnergy = clamp01(0.28 + waveVisualIntensity * 0.52 + humidity * 0.2);
       const uiQuietness = clamp01(0.72 + uiCalm * 0.22 - waveVisualIntensity * 0.08);
+      const sandMoisture = clamp01(humidity * 0.56 + waveVisualIntensity * 0.4);
+      const waterDepthTone = clamp01(0.24 + humidity * 0.32 + waveVisualIntensity * 0.36 + stormMood * 0.12);
+      const uiGlassClarity = clamp01(0.58 + uiCalm * 0.26 - waveVisualIntensity * 0.16);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1226,7 +1230,8 @@ export const Dust = () => {
       const cinematicRoll =
         cameraTilt * 0.0019 +
         Math.sin(now * 0.0007) * (0.0015 + waveVisualIntensity * 0.0022) +
-        Math.sin(now * 0.0012 + player.vx * 0.005) * (0.0008 + Math.min(0.002, Math.abs(player.vx) / 90000 + Math.abs(player.vy) / 180000));
+        Math.sin(now * 0.0012 + player.vx * 0.005) * (0.0008 + Math.min(0.002, Math.abs(player.vx) / 90000 + Math.abs(player.vy) / 180000)) +
+        Math.sin(now * 0.0016 + player.vy * 0.003) * clamp01(Math.abs(player.vx) / 340 + Math.abs(player.vy) / 860) * 0.0012;
       ctx.rotate(cinematicRoll);
       ctx.translate(-canvasEl.width * 0.5 + cameraSwayX, -canvasEl.height * 0.5 + cameraSwayY);
 
@@ -1325,6 +1330,20 @@ export const Dust = () => {
       ctx.closePath();
       ctx.fill();
 
+      const nearParallax = ctx.createLinearGradient(0, canvasEl.height * 0.52, 0, canvasEl.height);
+      nearParallax.addColorStop(0, `rgba(38, 78, 110, ${0.08 + (1 - stormMood) * 0.05})`);
+      nearParallax.addColorStop(1, `rgba(18, 36, 62, ${0.2 + stormMood * 0.08})`);
+      ctx.fillStyle = nearParallax;
+      ctx.beginPath();
+      ctx.moveTo(-40, canvasEl.height + 20);
+      for (let x = -40; x <= canvasEl.width + 40; x += 58) {
+        const y = canvasEl.height * 0.72 + Math.sin((x + camX * 0.32 + tSky * 900) * 0.012) * 24 + Math.cos((x + tSky * 740) * 0.018) * 14;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(canvasEl.width + 40, canvasEl.height + 20);
+      ctx.closePath();
+      ctx.fill();
+
       // layered atmospheric perspective haze (non-gameplay)
       const lowMist = ctx.createLinearGradient(0, canvasEl.height * 0.3, 0, canvasEl.height);
       lowMist.addColorStop(0, `rgba(158, 198, 218, ${0.02 + humidity * 0.03})`);
@@ -1400,9 +1419,11 @@ export const Dust = () => {
             const mineralTint = Math.floor((hash2(x * 7 + 5, y * 7 + 13) - 0.5) * 10);
             const strat = Math.sin((x * 0.23 + y * 1.2) + now * 0.00055) * 0.5 + 0.5;
             const dryHighlight = (1 - humidity) * (0.8 + goldenHour * 0.3);
-            const sandR = clamp255((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint + strat * 8 + dryHighlight * 10) * microContrast * sandAlbedoBoost);
-            const sandG = clamp255((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5 + strat * 5 + dryHighlight * 6) * microContrast * sandAlbedoBoost);
-            const sandB = clamp255((base - 20 - coolShadow + mineralTint * 0.3 + strat * 2 - dryHighlight * 3) * microContrast * (0.94 + (sandAlbedoBoost - 1) * 0.5));
+            const moistureDarken = 1 - sandMoisture * 0.14;
+            const moistureCool = sandMoisture * 12;
+            const sandR = clamp255((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint + strat * 8 + dryHighlight * 10 - moistureCool) * microContrast * sandAlbedoBoost * moistureDarken);
+            const sandG = clamp255((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5 + strat * 5 + dryHighlight * 6 + moistureCool * 0.3) * microContrast * sandAlbedoBoost * (1 - sandMoisture * 0.08));
+            const sandB = clamp255((base - 20 - coolShadow + mineralTint * 0.3 + strat * 2 - dryHighlight * 3 + moistureCool * 0.55) * microContrast * (0.94 + (sandAlbedoBoost - 1) * 0.5));
             ctx.fillStyle = `rgb(${sandR}, ${sandG}, ${sandB})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
@@ -1538,8 +1559,8 @@ export const Dust = () => {
             const nearWater = getCell(x + 1, y) === 3 || getCell(x - 1, y) === 3 || getCell(x, y + 1) === 3 || getCell(x, y - 1) === 3;
             if (nearWater) {
               const damp = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
-              damp.addColorStop(0, "rgba(88, 112, 128, 0.08)");
-              damp.addColorStop(1, "rgba(34, 48, 60, 0.18)");
+              damp.addColorStop(0, `rgba(92, 126, 146, ${0.06 + sandMoisture * 0.08})`);
+              damp.addColorStop(1, `rgba(24, 42, 60, ${0.16 + sandMoisture * 0.1 + waterDepthTone * 0.04})`);
               ctx.fillStyle = damp;
               ctx.fillRect(sx, sy, CELL, CELL);
 
@@ -1593,10 +1614,11 @@ export const Dust = () => {
             const cyanLift = Math.floor((1 - stormMood) * 12 + sunsetWarmth * 6);
             const coastalGreen = Math.floor(6 + (1 - stormMood) * 8 + Math.max(0, 2 - localDepth) * 2);
             const brineShift = Math.sin(now * 0.0012 + x * 0.18 + y * 0.12) * 0.5 + 0.5;
-            const waterR = clamp255(18 + Math.floor(wn * 14) + brineShift * 7 - localDepth * 2 + polarizer * 6);
-            const waterG = clamp255((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen + brineShift * 10) * waterLuminanceLift);
-            const waterB = clamp255((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3) + brineShift * 12 + polarizer * 8) * (0.94 + (waterLuminanceLift - 1) * 0.8));
-            const waterA = clamp01(0.76 + wavelet * 0.09 + (waterLuminanceLift - 0.84) * 0.14 + waterClarity * 0.08 + brineShift * 0.03);
+            const depthCooling = localDepth * (2.4 + waterDepthTone * 2.2);
+            const waterR = clamp255(18 + Math.floor(wn * 14) + brineShift * 7 - depthCooling + polarizer * 6 - waterDepthTone * 4);
+            const waterG = clamp255((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen + brineShift * 10 - waterDepthTone * localDepth * 1.4) * waterLuminanceLift);
+            const waterB = clamp255((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3) + brineShift * 12 + polarizer * 8 + waterDepthTone * 10) * (0.94 + (waterLuminanceLift - 1) * 0.8));
+            const waterA = clamp01(0.74 + wavelet * 0.09 + (waterLuminanceLift - 0.84) * 0.14 + waterClarity * 0.08 + brineShift * 0.03 + waterDepthTone * 0.04);
             ctx.fillStyle = `rgba(${waterR}, ${waterG}, ${waterB}, ${waterA})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
@@ -2423,9 +2445,9 @@ export const Dust = () => {
       const hudH = compactHud ? 58 : 98;
       const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.1 + uiFrost * 0.06})`);
-      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.05 + uiFrost * 0.04})`);
-      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.01 + uiFrost * 0.03})`);
+      hudGrad.addColorStop(0, `rgba(12, 24, 40, ${uiGlassAlpha + 0.1 + uiFrost * 0.06 + uiGlassClarity * 0.03})`);
+      hudGrad.addColorStop(0.45, `rgba(8, 18, 32, ${uiGlassAlpha + 0.05 + uiFrost * 0.04 + uiGlassClarity * 0.02})`);
+      hudGrad.addColorStop(1, `rgba(6, 14, 26, ${uiGlassAlpha + 0.01 + uiFrost * 0.03 + uiGlassClarity * 0.015})`);
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
       hudGlow.addColorStop(0, `rgba(146, 210, 255, ${0.08 + uiHighlight * 0.12})`);
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
@@ -2508,6 +2530,13 @@ export const Dust = () => {
       dirtGrad.addColorStop(1, "rgba(248, 210, 138, 0.95)");
       ctx.fillStyle = dirtGrad;
       ctx.fillRect(dirtBarX, dirtBarY, dirtBarW * dirtFill, 8);
+      if (dirtFill > 0.01) {
+        const dirtGlow = ctx.createLinearGradient(dirtBarX, dirtBarY - 2, dirtBarX + dirtBarW * dirtFill, dirtBarY - 2);
+        dirtGlow.addColorStop(0, `rgba(255, 218, 148, ${0.12 + uiAccent * 0.12})`);
+        dirtGlow.addColorStop(1, "rgba(255, 218, 148, 0)");
+        ctx.fillStyle = dirtGlow;
+        ctx.fillRect(dirtBarX, dirtBarY - 2, dirtBarW * dirtFill, 2);
+      }
       ctx.strokeStyle = "rgba(214,230,255,0.32)";
       ctx.strokeRect(dirtBarX, dirtBarY, dirtBarW, 8);
       if (hudWind.storm > 0.02) {
