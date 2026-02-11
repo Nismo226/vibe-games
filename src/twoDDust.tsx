@@ -104,6 +104,7 @@ export const Dust = () => {
     tsunamiSpeed: number;
     waveTime: number;
     resultText: string;
+    resultHold: number;
   }>({
     state: "explore",
     timer: 90,
@@ -112,6 +113,7 @@ export const Dust = () => {
     tsunamiSpeed: 94,
     waveTime: 0,
     resultText: "",
+    resultHold: 0,
   });
 
   const keysRef = useRef<Record<string, boolean>>({});
@@ -194,6 +196,7 @@ export const Dust = () => {
       quest.tsunamiX = -220;
       quest.waveTime = 0;
       quest.resultText = "";
+      quest.resultHold = 0;
 
       const tool = toolRef.current;
       tool.falling.length = 0;
@@ -912,6 +915,7 @@ export const Dust = () => {
           quest.timer = 90;
           quest.tsunamiX = -220;
           quest.waveTime = 0;
+          quest.resultHold = 0;
           clearWater();
         }
       } else if (quest.state === "countdown") {
@@ -1021,6 +1025,11 @@ export const Dust = () => {
             quest.resultText = "Defense incomplete. Build the wave-facing barrier without burying the tribe.";
           }
         }
+      }
+
+      if (quest.state === "success" || quest.state === "fail") {
+        quest.resultHold += dt;
+        if (quest.resultHold > 3.2) resetLevel();
       }
 
       const stormCountdown = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 90)) : 0;
@@ -1148,15 +1157,27 @@ export const Dust = () => {
 
           if (c === 1) {
             const n = hash2(x, y);
-            const base = 88 + Math.floor(n * 26);
-            ctx.fillStyle = `rgb(${base + 28}, ${base + 10}, ${base - 20})`;
+            const topAir = getCell(x, y - 1) === 0;
+            const leftAir = getCell(x - 1, y) === 0;
+            const rightAir = getCell(x + 1, y) === 0;
+            const bottomAir = getCell(x, y + 1) === 0;
+
+            const base = 90 + Math.floor(n * 24);
+            ctx.fillStyle = `rgb(${base + 30}, ${base + 12}, ${base - 20})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
-            const grad = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
-            grad.addColorStop(0, "rgba(238, 199, 132, 0.12)");
-            grad.addColorStop(1, "rgba(90, 62, 30, 0.14)");
-            ctx.fillStyle = grad;
+            const warmLight = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+            warmLight.addColorStop(0, "rgba(248, 220, 164, 0.16)");
+            warmLight.addColorStop(0.6, "rgba(190, 138, 74, 0.08)");
+            warmLight.addColorStop(1, "rgba(60, 40, 22, 0.2)");
+            ctx.fillStyle = warmLight;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const ao = (topAir ? 0 : 0.55) + (leftAir ? 0 : 0.35) + (rightAir ? 0 : 0.25) + (bottomAir ? 0 : 0.4);
+            if (ao > 0.2) {
+              ctx.fillStyle = `rgba(34, 22, 10, ${Math.min(0.22, ao * 0.08)})`;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             ctx.fillStyle = "rgba(234, 196, 134, 0.24)";
             if (hash2(x + 11, y + 7) > 0.35) ctx.fillRect(sx + 2, sy + 2, 2, 2);
@@ -1168,20 +1189,20 @@ export const Dust = () => {
             if (hash2(x + 23, y + 29) > 0.5) ctx.fillRect(sx + 9, sy + 7, 2, 2);
             if (hash2(x + 2, y + 37) > 0.58) ctx.fillRect(sx + 5, sy + 10, 1, 1);
 
-            if (getCell(x, y - 1) === 0) {
-              ctx.fillStyle = "rgba(245, 213, 150, 0.28)";
+            if (topAir) {
+              ctx.fillStyle = "rgba(248, 224, 168, 0.32)";
               ctx.fillRect(sx, sy, CELL, 2);
             }
-            if (getCell(x, y + 1) === 0) {
-              ctx.fillStyle = "rgba(45, 29, 16, 0.3)";
+            if (bottomAir) {
+              ctx.fillStyle = "rgba(44, 28, 16, 0.34)";
               ctx.fillRect(sx, sy + CELL - 2, CELL, 2);
             }
-            if (getCell(x - 1, y) === 0) {
-              ctx.fillStyle = "rgba(230, 192, 130, 0.16)";
+            if (leftAir) {
+              ctx.fillStyle = "rgba(235, 198, 136, 0.18)";
               ctx.fillRect(sx, sy, 2, CELL);
             }
-            if (getCell(x + 1, y) === 0) {
-              ctx.fillStyle = "rgba(40, 26, 14, 0.18)";
+            if (rightAir) {
+              ctx.fillStyle = "rgba(40, 26, 14, 0.2)";
               ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
             }
           } else if (c === 3) {
@@ -1190,20 +1211,23 @@ export const Dust = () => {
             const topAir = getCell(x, y - 1) === 0;
             const leftAir = getCell(x - 1, y) === 0;
             const rightAir = getCell(x + 1, y) === 0;
+            const belowWater = getCell(x, y + 1) === 3;
+            const depthBoost = belowWater ? 0.14 : 0;
 
-            const deep = 130 + Math.floor(wn * 25);
-            ctx.fillStyle = `rgba(${28 + Math.floor(wn * 22)}, ${deep}, ${220 + Math.floor(wn * 24)}, 0.9)`;
+            const deep = 122 + Math.floor(wn * 24);
+            ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70)}, ${222 + Math.floor(wn * 26)}, 0.92)`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const inner = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
-            inner.addColorStop(0, "rgba(190,238,255,0.18)");
-            inner.addColorStop(1, "rgba(12,78,156,0.22)");
+            inner.addColorStop(0, "rgba(205,242,255,0.2)");
+            inner.addColorStop(0.45, "rgba(64,152,225,0.1)");
+            inner.addColorStop(1, "rgba(8,60,132,0.24)");
             ctx.fillStyle = inner;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             if (topAir) {
-              const foamBase = 0.5 + waveVisualIntensity * 0.34;
-              ctx.fillStyle = `rgba(232,250,255,${foamBase})`;
+              const foamBase = 0.54 + waveVisualIntensity * 0.34;
+              ctx.fillStyle = `rgba(236,252,255,${foamBase})`;
               ctx.fillRect(sx, sy, CELL, 2);
               ctx.fillStyle = `rgba(210,244,255,${0.2 + waveVisualIntensity * 0.14})`;
               ctx.fillRect(sx, sy + 2, CELL, 1);
@@ -1225,6 +1249,13 @@ export const Dust = () => {
                 ctx.fillRect(sx + 1, ridgeY, CELL - 2, 1);
               }
             }
+
+            const caustic = hash2(x * 3 + Math.floor(t * 17), y * 5 + Math.floor(t * 12));
+            if (caustic > 0.73) {
+              ctx.fillStyle = "rgba(228, 250, 255, 0.18)";
+              ctx.fillRect(sx + 1, sy + 4, CELL - 4, 1);
+            }
+
             if (leftAir) {
               ctx.fillStyle = "rgba(198,236,255,0.16)";
               ctx.fillRect(sx, sy, 1, CELL);
@@ -1239,10 +1270,65 @@ export const Dust = () => {
               ctx.fillRect(sx + 2, sy + 3, 2, 1);
             }
           } else {
-            ctx.fillStyle = "#5b5f68";
+            const n = hash2(x, y);
+            const topAir = getCell(x, y - 1) === 0;
+            const leftAir = getCell(x - 1, y) === 0;
+            const rightAir = getCell(x + 1, y) === 0;
+            const rock = 84 + Math.floor(n * 24);
+            ctx.fillStyle = `rgb(${rock}, ${rock + 4}, ${rock + 10})`;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const rockGrad = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+            rockGrad.addColorStop(0, "rgba(176, 186, 205, 0.12)");
+            rockGrad.addColorStop(1, "rgba(18, 22, 30, 0.22)");
+            ctx.fillStyle = rockGrad;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
+            if (hash2(x + 7, y + 13) > 0.5) {
+              ctx.fillStyle = "rgba(132, 142, 164, 0.25)";
+              ctx.fillRect(sx + 2, sy + 2, 3, 1);
+            }
+            if (hash2(x + 29, y + 3) > 0.55) {
+              ctx.fillStyle = "rgba(42, 46, 56, 0.32)";
+              ctx.fillRect(sx + 6, sy + 8, 4, 1);
+            }
+            if (topAir) {
+              ctx.fillStyle = "rgba(198, 212, 236, 0.22)";
+              ctx.fillRect(sx, sy, CELL, 1);
+            }
+            if (leftAir) {
+              ctx.fillStyle = "rgba(166, 182, 210, 0.16)";
+              ctx.fillRect(sx, sy, 1, CELL);
+            }
+            if (rightAir) {
+              ctx.fillStyle = "rgba(20, 24, 34, 0.26)";
+              ctx.fillRect(sx + CELL - 1, sy, 1, CELL);
+            }
           }
         }
+      }
+
+      // directional sunlight + atmospheric shafts
+      const sunX = canvasEl.width * 0.18 + Math.sin(performance.now() * 0.00012) * 40;
+      const sunY = canvasEl.height * 0.12;
+      const sunGlow = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, canvasEl.height * 0.62);
+      sunGlow.addColorStop(0, "rgba(255, 227, 171, 0.24)");
+      sunGlow.addColorStop(0.45, "rgba(255, 208, 138, 0.08)");
+      sunGlow.addColorStop(1, "rgba(255, 200, 120, 0)");
+      ctx.fillStyle = sunGlow;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const shaftAlpha = 0.03 + waveVisualIntensity * 0.05;
+      ctx.fillStyle = `rgba(255, 226, 170, ${shaftAlpha})`;
+      for (let i = -1; i < 6; i++) {
+        const bx = ((i * 220 - camX * 0.09) % (canvasEl.width + 260)) - 120;
+        ctx.beginPath();
+        ctx.moveTo(bx, -20);
+        ctx.lineTo(bx + 80, -20);
+        ctx.lineTo(bx + 260, canvasEl.height + 30);
+        ctx.lineTo(bx + 180, canvasEl.height + 30);
+        ctx.closePath();
+        ctx.fill();
       }
 
       const tribe = tribeRef.current;
@@ -1342,52 +1428,17 @@ export const Dust = () => {
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", toastX + 8, ty - 30);
       }
 
-      // adaptive barrier blueprint overlay (countdown/wave): shows where protection is still missing
-      if (quest.state === "countdown" || quest.state === "wave") {
-        const plan = getBarrierPlan();
-        let missing = 0;
-
-        for (let x = plan.x0; x <= plan.x1; x++) {
-          for (let y = plan.y0; y <= plan.y1; y++) {
-            if (!inBounds(x, y)) continue;
-            const cell = getCell(x, y);
-            const sx = x * CELL - camX;
-            const sy = y * CELL - camY;
-            const filled = cell === 1;
-            if (!filled) missing++;
-
-            if (filled) {
-              ctx.fillStyle = "rgba(124, 214, 167, 0.2)";
-              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
-            } else {
-              const pulse = 0.35 + Math.sin(performance.now() * 0.006 + x * 0.8 + y * 0.35) * 0.2;
-              ctx.fillStyle = `rgba(243, 138, 116, ${Math.max(0.14, pulse)})`;
-              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
-              ctx.strokeStyle = "rgba(255, 223, 205, 0.42)";
-              ctx.strokeRect(sx + 1.5, sy + 1.5, CELL - 3, CELL - 3);
-            }
-          }
-        }
-
-        const labelX = tribeScreenX - 92;
-        const labelY = ty - 52;
-        const labelW = 184;
-        const labelH = 24;
-        ctx.fillStyle = "rgba(16, 24, 36, 0.8)";
-        ctx.fillRect(labelX, labelY, labelW, labelH);
-        ctx.strokeStyle = "rgba(197, 224, 255, 0.42)";
-        ctx.strokeRect(labelX, labelY, labelW, labelH);
-        ctx.fillStyle = missing > 0 ? "#ffd5c9" : "#d1ffe5";
-        ctx.font = "12px system-ui";
-        ctx.fillText(missing > 0 ? `Barrier blueprint: fill ${missing} tiles` : "Barrier blueprint: complete", labelX + 8, labelY + 16);
-      }
-
       // removed legacy white wave overlays; keep only block-water visuals
 
       if (quest.state === "wave") {
-        const floodTint = Math.min(0.2, 0.06 + quest.waveTime * 0.01);
+        const floodTint = Math.min(0.24, 0.08 + quest.waveTime * 0.012);
         ctx.fillStyle = `rgba(60,132,210,${floodTint})`;
         ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+        const barH = Math.min(52, 12 + quest.waveTime * 4);
+        ctx.fillStyle = "rgba(4, 8, 14, 0.62)";
+        ctx.fillRect(0, 0, canvasEl.width, barH);
+        ctx.fillRect(0, canvasEl.height - barH, canvasEl.width, barH);
       }
 
       // incoming-storm readability pass: wind + rain intensifies as tsunami nears/hits
@@ -1458,8 +1509,28 @@ export const Dust = () => {
         Math.max(canvasEl.width, canvasEl.height) * 0.72,
       );
       vignette.addColorStop(0, "rgba(0,0,0,0)");
-      vignette.addColorStop(1, "rgba(0,0,0,0.22)");
+      vignette.addColorStop(1, "rgba(0,0,0,0.24)");
       ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // split-toning grade: warm highlights + cool shadows
+      const coolShadow = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      coolShadow.addColorStop(0, "rgba(28, 50, 96, 0.05)");
+      coolShadow.addColorStop(1, "rgba(6, 18, 40, 0.1)");
+      ctx.fillStyle = coolShadow;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const warmLift = ctx.createRadialGradient(
+        canvasEl.width * 0.36,
+        canvasEl.height * 0.28,
+        18,
+        canvasEl.width * 0.36,
+        canvasEl.height * 0.28,
+        canvasEl.width * 0.8,
+      );
+      warmLift.addColorStop(0, "rgba(255, 206, 140, 0.08)");
+      warmLift.addColorStop(1, "rgba(255, 188, 120, 0)");
+      ctx.fillStyle = warmLift;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // falling placed dirt clumps
@@ -1578,10 +1649,16 @@ export const Dust = () => {
       const expectedBarrier = Math.floor(BARRIER_GOAL * (0.2 + countdownProgress * 0.75));
       const urgencyGap = barrierActive ? Math.max(0, expectedBarrier - barrierStrength) : 0;
 
-      ctx.fillStyle = "rgba(10,18,30,0.72)";
-      ctx.fillRect(14, 14, 760, compactHud ? 62 : 110);
-      ctx.strokeStyle = "rgba(170,210,255,0.45)";
-      ctx.strokeRect(14, 14, 760, compactHud ? 62 : 110);
+      const hudH = compactHud ? 62 : 110;
+      const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
+      hudGrad.addColorStop(0, "rgba(14, 24, 40, 0.82)");
+      hudGrad.addColorStop(1, "rgba(8, 14, 24, 0.76)");
+      ctx.fillStyle = "rgba(0,0,0,0.24)";
+      ctx.fillRect(18, 18, 760, hudH);
+      ctx.fillStyle = hudGrad;
+      ctx.fillRect(14, 14, 760, hudH);
+      ctx.strokeStyle = "rgba(170,210,255,0.5)";
+      ctx.strokeRect(14, 14, 760, hudH);
 
       const hudWind = getStormWind(questHud);
       const windLevel = Math.min(1, Math.abs(hudWind.gust) / 88);
@@ -1669,9 +1746,14 @@ export const Dust = () => {
       const restartH = 34;
       const restartX = canvasEl.width - restartW - 16;
       const restartY = 18;
-      ctx.fillStyle = "rgba(12,26,42,0.82)";
+      const restartGrad = ctx.createLinearGradient(restartX, restartY, restartX, restartY + restartH);
+      restartGrad.addColorStop(0, "rgba(28, 56, 86, 0.9)");
+      restartGrad.addColorStop(1, "rgba(12, 30, 48, 0.92)");
+      ctx.fillStyle = "rgba(0,0,0,0.24)";
+      ctx.fillRect(restartX + 2, restartY + 2, restartW, restartH);
+      ctx.fillStyle = restartGrad;
       ctx.fillRect(restartX, restartY, restartW, restartH);
-      ctx.strokeStyle = "rgba(186,218,255,0.5)";
+      ctx.strokeStyle = "rgba(186,218,255,0.6)";
       ctx.strokeRect(restartX, restartY, restartW, restartH);
       ctx.fillStyle = "#e8f5ff";
       ctx.font = "bold 14px system-ui";
@@ -1704,13 +1786,18 @@ export const Dust = () => {
       const toggleX = canvasEl.width - toggleW - 16;
       const toggleY = canvasEl.height - toggleH - 52;
 
-      ctx.fillStyle = "rgba(9,17,30,0.82)";
+      const toggleGrad = ctx.createLinearGradient(toggleX, toggleY, toggleX, toggleY + toggleH);
+      toggleGrad.addColorStop(0, "rgba(22, 42, 68, 0.9)");
+      toggleGrad.addColorStop(1, "rgba(10, 20, 34, 0.9)");
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      ctx.fillRect(toggleX + 2, toggleY + 2, toggleW, toggleH);
+      ctx.fillStyle = toggleGrad;
       ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
-      ctx.strokeStyle = "rgba(186,218,255,0.45)";
+      ctx.strokeStyle = "rgba(186,218,255,0.52)";
       ctx.strokeRect(toggleX, toggleY, toggleW, toggleH);
 
       const grabActive = mobile.toolToggle === "suck";
-      ctx.fillStyle = grabActive ? "rgba(95,196,255,0.32)" : "rgba(255,183,120,0.22)";
+      ctx.fillStyle = grabActive ? "rgba(95,196,255,0.36)" : "rgba(255,183,120,0.28)";
       ctx.fillRect(toggleX + 4, toggleY + 4, toggleW - 8, toggleH - 8);
       ctx.fillStyle = "#e8f5ff";
       ctx.font = "bold 14px system-ui";
