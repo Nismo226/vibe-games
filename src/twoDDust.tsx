@@ -1105,6 +1105,109 @@ export const Dust = () => {
       }
     }
 
+    function drawPersonSilhouette(
+      ctx: CanvasRenderingContext2D,
+      x: number,
+      y: number,
+      scale: number,
+      palette: { skin: string; clothA: string; clothB: string; hair: string; accent: string },
+      mood: "idle" | "run" | "panic",
+      phase: number,
+      facing: 1 | -1,
+    ) {
+      const runAmp = mood === "run" ? 1 : mood === "panic" ? 1.35 : 0.35;
+      const panicAmp = mood === "panic" ? 1 : 0;
+      const bob = Math.sin(phase * 2.6) * (1.2 * runAmp) + Math.sin(phase * 5.4) * (0.5 + panicAmp * 0.8);
+      const lean = (mood === "run" ? 0.16 : mood === "panic" ? 0.24 : 0.04) * facing;
+      const armSwing = Math.sin(phase * (mood === "panic" ? 9 : 7)) * (0.75 + panicAmp * 0.55);
+      const legSwing = Math.sin(phase * (mood === "panic" ? 10 : 8) + 0.7) * (1.35 + panicAmp * 0.65);
+      const shoulderY = y + 9 + bob;
+
+      ctx.save();
+      ctx.translate(x + 6, y + 10 + bob);
+      ctx.scale(facing * scale, scale);
+      ctx.rotate(lean);
+      ctx.translate(-6, -10 - bob);
+
+      const shadow = ctx.createRadialGradient(x + 6, y + 18, 1, x + 6, y + 18, 10);
+      shadow.addColorStop(0, "rgba(8,12,18,0.36)");
+      shadow.addColorStop(1, "rgba(8,12,18,0)");
+      ctx.fillStyle = shadow;
+      ctx.fillRect(x - 5, y + 14, 22, 10);
+
+      // legs
+      ctx.strokeStyle = palette.clothB;
+      ctx.lineWidth = 2.6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x + 4.6, y + 13);
+      ctx.lineTo(x + 3.4 - legSwing * 0.7, y + 18);
+      ctx.moveTo(x + 7.2, y + 13);
+      ctx.lineTo(x + 8.8 + legSwing * 0.7, y + 18);
+      ctx.stroke();
+
+      // torso
+      const torso = ctx.createLinearGradient(x + 2, y + 6, x + 10, y + 16);
+      torso.addColorStop(0, palette.clothA);
+      torso.addColorStop(1, palette.clothB);
+      ctx.fillStyle = torso;
+      ctx.beginPath();
+      ctx.moveTo(x + 2.3, y + 6.2);
+      ctx.lineTo(x + 9.7, y + 6.2);
+      ctx.lineTo(x + 10.3, y + 13.7);
+      ctx.lineTo(x + 1.8, y + 13.7);
+      ctx.closePath();
+      ctx.fill();
+
+      // shoulder wrap / silhouette booster
+      ctx.fillStyle = "rgba(255,255,255,0.09)";
+      ctx.fillRect(x + 2.2, shoulderY, 7.8, 1.4);
+
+      // arms
+      ctx.strokeStyle = palette.skin;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(x + 2.3, shoulderY);
+      ctx.lineTo(x + 0.6 - armSwing, y + 11.5 + Math.abs(armSwing) * 0.45);
+      ctx.moveTo(x + 9.6, shoulderY + 0.2);
+      ctx.lineTo(x + 11.2 + armSwing, y + 11.5 + Math.abs(armSwing) * 0.35);
+      ctx.stroke();
+
+      // head + hair + face accent
+      const headGlow = ctx.createRadialGradient(x + 6, y + 3.8, 1, x + 6, y + 3.8, 7);
+      headGlow.addColorStop(0, "rgba(255,234,194,0.22)");
+      headGlow.addColorStop(1, "rgba(255,234,194,0)");
+      ctx.fillStyle = headGlow;
+      ctx.fillRect(x - 2, y - 4, 16, 14);
+
+      ctx.fillStyle = palette.skin;
+      ctx.beginPath();
+      ctx.ellipse(x + 6, y + 3.6, 3.2, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = palette.hair;
+      ctx.beginPath();
+      ctx.ellipse(x + 6.2, y + 2.2, 3.5, 2.1, -0.1, Math.PI, Math.PI * 2);
+      ctx.fill();
+
+      const eyeSpark = 0.48 + Math.sin(phase * 14 + x * 0.7) * 0.3;
+      ctx.fillStyle = `rgba(18,26,38,${0.55 + eyeSpark * 0.35})`;
+      ctx.fillRect(x + 7.2, y + 3.5, 0.9, 0.9);
+
+      if (mood === "panic") {
+        ctx.strokeStyle = palette.accent;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x + 10.8, y + 1.2);
+        ctx.lineTo(x + 13.1, y - 1.1);
+        ctx.moveTo(x + 12.7, y + 1.8);
+        ctx.lineTo(x + 15, y -0.5);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
     function draw(dt: number) {
       const ctx = canvasEl.getContext("2d");
       if (!ctx) return;
@@ -2022,17 +2125,18 @@ export const Dust = () => {
         ctx.fillText(`${distCells}m`, ix - 12, iy + 24);
       }
 
-      // tribe character (first rescue target)
+      // tribe cluster presentation with stronger silhouettes + panic locomotion
       const tx = tribe.x - camX;
-      const tribeBob = Math.sin(performance.now() * 0.005) * 1.5;
+      const tribeBob = Math.sin(performance.now() * 0.0052) * 1.8;
       const ty = tribe.y - camY + tribeBob;
+      const panicState = quest.state === "countdown" || quest.state === "wave";
+      const panic = panicState ? (quest.state === "wave" ? 1 : Math.min(1, 1 - quest.timer / 90)) : 0;
 
-      // soft contact shadows to anchor characters into the terrain
-      const tribeShadow = ctx.createRadialGradient(tx + tribe.w * 0.5, ty + tribe.h + 2, 1, tx + tribe.w * 0.5, ty + tribe.h + 2, 14);
-      tribeShadow.addColorStop(0, "rgba(6, 10, 18, 0.32)");
+      const tribeShadow = ctx.createRadialGradient(tx + tribe.w * 0.5, ty + tribe.h + 2, 1, tx + tribe.w * 0.5, ty + tribe.h + 2, 18);
+      tribeShadow.addColorStop(0, "rgba(6, 10, 18, 0.38)");
       tribeShadow.addColorStop(1, "rgba(6, 10, 18, 0)");
       ctx.fillStyle = tribeShadow;
-      ctx.fillRect(tx - 8, ty + tribe.h - 3, tribe.w + 16, 14);
+      ctx.fillRect(tx - 10, ty + tribe.h - 2, tribe.w + 20, 14);
 
       const beaconPulse = 0.35 + Math.sin(performance.now() * 0.004) * 0.12;
       const beacon = ctx.createLinearGradient(tribeScreenX, 0, tribeScreenX, ty + 8);
@@ -2041,47 +2145,65 @@ export const Dust = () => {
       ctx.fillStyle = beacon;
       ctx.fillRect(tribeScreenX - 14, 0, 28, Math.max(0, ty + 8));
 
-      ctx.fillStyle = "#ffd08a";
-      ctx.fillRect(tx + 3, ty, 6, 6);
-      ctx.fillStyle = "#8f4f2a";
-      ctx.fillRect(tx + 2, ty + 6, 8, 10);
-      ctx.fillStyle = "#f4e4d2";
-      ctx.fillRect(tx + 4, ty + 8, 4, 2);
+      const panicAmp = 1.5 + panic * 6.5;
+      const elderX = tx;
+      const elderY = ty;
+      const wifeX = tx + 20 + Math.sin(now * 0.008) * panicAmp;
+      const kid1X = tx + 34 + Math.sin(now * 0.011 + 1.2) * (panicAmp * 0.85);
+      const kid2X = tx - 15 + Math.sin(now * 0.01 + 2.4) * (panicAmp * 0.82);
+      const familyY = ty + 0.5;
 
-      // family nearby (wife + two kids) with small panic shuffle during storm
-      const panicPhase = quest.state === "countdown" || quest.state === "wave" ? 1 : 0;
-      const panicAmp = panicPhase ? 5.5 : 1.4;
-      const wifeX = tx + 22 + Math.sin(now * 0.006) * panicAmp;
-      const kid1X = tx + 34 + Math.sin(now * 0.008 + 1.2) * (panicAmp * 0.9);
-      const kid2X = tx - 14 + Math.sin(now * 0.007 + 2.4) * (panicAmp * 0.9);
-      const familyY = ty + 1;
+      drawPersonSilhouette(
+        ctx,
+        elderX,
+        elderY,
+        1,
+        { skin: "#f9d4aa", clothA: "#9a5a31", clothB: "#6f3d22", hair: "#3f2719", accent: "#ffd2c1" },
+        panicState ? "panic" : "idle",
+        now * 0.007,
+        panicState ? -1 : 1,
+      );
+      drawPersonSilhouette(
+        ctx,
+        wifeX,
+        familyY,
+        1,
+        { skin: "#ffd9bc", clothA: "#955d42", clothB: "#6b4433", hair: "#4f2f26", accent: "#ffd0c4" },
+        panicState ? "panic" : "idle",
+        now * 0.008 + 0.8,
+        -1,
+      );
+      drawPersonSilhouette(
+        ctx,
+        kid1X,
+        familyY + 1,
+        0.82,
+        { skin: "#ffe1c4", clothA: "#7b9fca", clothB: "#52709a", hair: "#5a4230", accent: "#d4efff" },
+        panicState ? "panic" : "run",
+        now * 0.009 + 1.4,
+        1,
+      );
+      drawPersonSilhouette(
+        ctx,
+        kid2X,
+        familyY + 1,
+        0.82,
+        { skin: "#ffe2bf", clothA: "#9d88ca", clothB: "#6e5f9e", hair: "#5c4633", accent: "#e7d7ff" },
+        panicState ? "panic" : "run",
+        now * 0.009 + 2.6,
+        -1,
+      );
 
-      // wife
-      ctx.fillStyle = "#ffd7b0";
-      ctx.fillRect(wifeX + 2, familyY, 5, 5);
-      ctx.fillStyle = "#9a5d3c";
-      ctx.fillRect(wifeX + 1, familyY + 5, 7, 9);
-
-      // kids
-      ctx.fillStyle = "#ffe1be";
-      ctx.fillRect(kid1X + 2, familyY + 2, 4, 4);
-      ctx.fillRect(kid2X + 2, familyY + 2, 4, 4);
-      ctx.fillStyle = "#7f96b3";
-      ctx.fillRect(kid1X + 1, familyY + 6, 6, 7);
-      ctx.fillStyle = "#8f7fb3";
-      ctx.fillRect(kid2X + 1, familyY + 6, 6, 7);
-
-      if (quest.state === "countdown" || quest.state === "wave") {
-        const panic = quest.state === "wave" ? 1 : Math.min(1, 1 - quest.timer / 90);
-        const bubbleW = 36;
-        const bubbleH = 20;
-        const bubbleX = tx - 12;
-        const bubbleY = ty - 28 - panic * 4;
-        ctx.fillStyle = `rgba(${Math.floor(180 + panic * 55)}, ${Math.floor(70 + panic * 40)}, ${Math.floor(62 + panic * 20)}, 0.9)`;
+      if (panicState) {
+        const bubbleW = 40;
+        const bubbleH = 22;
+        const bubbleX = tx - 15;
+        const bubbleY = ty - 30 - panic * 5;
+        ctx.fillStyle = `rgba(${Math.floor(184 + panic * 54)}, ${Math.floor(76 + panic * 44)}, ${Math.floor(68 + panic * 18)}, 0.92)`;
         ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
-        ctx.fillStyle = "rgba(250,240,235,0.95)";
-        ctx.font = "bold 13px system-ui";
-        ctx.fillText(quest.state === "wave" ? "!!" : "!", bubbleX + 13, bubbleY + 14);
+        ctx.fillStyle = "rgba(250,240,235,0.96)";
+        ctx.font = "bold 14px system-ui";
+        ctx.fillText(quest.state === "wave" ? "!!!" : "!!", bubbleX + 10, bubbleY + 15);
       }
 
       if (quest.state === "explore") {
@@ -2343,30 +2465,57 @@ export const Dust = () => {
         }
       }
 
-      // persistent carried dirt blob (stays while inventory > 0)
-      const visibleBlob = Math.max(tool.carrySize, tool.blobSize * 0.9);
+      // persistent carried dirt-ball: deforming core + orbital chunks + suction trail
+      const visibleBlob = Math.max(tool.carrySize, tool.blobSize * 0.92);
       if (visibleBlob > 0.35) {
         const bx = tool.blobX - camX;
         const by = tool.blobY - camY;
         const pulse = tool.blobPulse;
+        const tBlob = now * 0.01;
+        const squash = 1 + Math.sin(tBlob * 1.7) * 0.16 + pulse * 0.22;
+        const stretch = 1 - Math.sin(tBlob * 1.7) * 0.1 - pulse * 0.12;
 
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
 
-        ctx.fillStyle = `rgba(184, 145, 92, ${0.12 + pulse * 0.22})`;
+        const trailCount = 5 + Math.floor(Math.min(1, visibleBlob / 18) * 6);
+        for (let i = 0; i < trailCount; i++) {
+          const tt = i / Math.max(1, trailCount - 1);
+          const txTrail = bx - (player.vx * 0.03 + Math.cos(tBlob + i) * 1.5) * (tt * 2.2);
+          const tyTrail = by - (player.vy * 0.02 + Math.sin(tBlob * 1.3 + i * 0.8) * 1.3) * (tt * 1.8);
+          const tr = visibleBlob * (0.55 - tt * 0.36);
+          ctx.fillStyle = `rgba(206, 168, 116, ${0.1 + (1 - tt) * 0.16 + pulse * 0.1})`;
+          ctx.beginPath();
+          ctx.ellipse(txTrail, tyTrail, tr, tr * 0.7, tBlob * 0.25 + tt * 0.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = `rgba(194, 151, 96, ${0.18 + pulse * 0.26})`;
         ctx.beginPath();
-        ctx.arc(bx, by, visibleBlob + pulse * 3, 0, Math.PI * 2);
+        ctx.ellipse(bx, by, (visibleBlob + pulse * 3.4) * squash, (visibleBlob + pulse * 2.5) * stretch, Math.sin(tBlob) * 0.35, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = `rgba(130, 96, 58, ${0.26 + pulse * 0.2})`;
+        const inner = ctx.createRadialGradient(bx - visibleBlob * 0.26, by - visibleBlob * 0.3, 1, bx, by, visibleBlob * 1.12);
+        inner.addColorStop(0, `rgba(236, 196, 138, ${0.42 + pulse * 0.2})`);
+        inner.addColorStop(0.55, `rgba(164, 120, 74, ${0.32 + pulse * 0.16})`);
+        inner.addColorStop(1, "rgba(84, 58, 34, 0)");
+        ctx.fillStyle = inner;
         ctx.beginPath();
-        ctx.arc(bx - visibleBlob * 0.28, by + visibleBlob * 0.1, visibleBlob * 0.66, 0, Math.PI * 2);
+        ctx.ellipse(bx, by, visibleBlob * (0.92 + squash * 0.08), visibleBlob * (0.72 + stretch * 0.14), Math.sin(tBlob * 0.8) * 0.5, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = `rgba(208, 171, 111, ${0.32 + pulse * 0.24})`;
-        ctx.beginPath();
-        ctx.arc(bx + visibleBlob * 0.32, by - visibleBlob * 0.16, visibleBlob * 0.48, 0, Math.PI * 2);
-        ctx.fill();
+        const orbitChunks = 7 + Math.floor(Math.min(1, visibleBlob / 16) * 5);
+        for (let i = 0; i < orbitChunks; i++) {
+          const a = tBlob * (1.7 + pulse * 0.9) + (i / orbitChunks) * Math.PI * 2;
+          const r = visibleBlob * (0.78 + Math.sin(tBlob * 2.3 + i) * 0.18 + pulse * 0.16);
+          const cx = bx + Math.cos(a) * r;
+          const cy = by + Math.sin(a * 1.3) * (r * 0.55);
+          const sz = 1.3 + (i % 3) * 0.65 + pulse * 0.8;
+          ctx.fillStyle = `rgba(${158 + (i % 2) * 28}, ${118 + (i % 3) * 16}, ${76 + (i % 2) * 8}, ${0.45 + pulse * 0.25})`;
+          ctx.beginPath();
+          ctx.arc(cx, cy, sz, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
         ctx.restore();
       }
@@ -2381,38 +2530,64 @@ export const Dust = () => {
         ctx.strokeRect(tc.x * CELL - camX, tc.y * CELL - camY, CELL, CELL);
       }
 
-      // player
+      // player: upgraded silhouette + locomotion animation layers
       const playerWater = playerWaterSubmergeRatio(player.x, player.y, player.w, player.h);
+      const px = player.x - camX;
+      const py = player.y - camY;
+      const motionPhase = now * 0.01 + Math.abs(player.vx) * 0.02;
+      const runBlend = clamp01(Math.abs(player.vx) / 180);
+      const panicBlend = clamp01((quest.state === "wave" ? 0.65 : 0.2) + runBlend * 0.35);
+      const mood: "idle" | "run" | "panic" = !player.onGround ? "panic" : runBlend > 0.24 ? "run" : "idle";
+      const facing: 1 | -1 = player.vx < -8 ? -1 : 1;
+
       if (playerWater > 0.02) {
-        const px = player.x - camX;
-        const py = player.y - camY;
         const wash = ctx.createLinearGradient(px, py, px, py + player.h + 10);
         wash.addColorStop(0, `rgba(150, 220, 255, ${0.08 + playerWater * 0.12})`);
         wash.addColorStop(1, "rgba(60, 150, 240, 0)");
         ctx.fillStyle = wash;
-        ctx.fillRect(px - 7, py - 6, player.w + 14, player.h + 14);
+        ctx.fillRect(px - 8, py - 7, player.w + 16, player.h + 16);
 
         ctx.fillStyle = `rgba(218, 245, 255, ${0.25 + playerWater * 0.3})`;
         const bt = performance.now() * 0.003;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
           const bx = px + 2 + ((i * 3.9 + bt * (0.8 + i * 0.35)) % Math.max(2, player.w - 2));
           const by = py + player.h - ((bt * (10 + i * 4) + i * 5) % (player.h + 6));
           ctx.beginPath();
-          ctx.arc(bx, by, 1.2 + i * 0.25, 0, Math.PI * 2);
+          ctx.arc(bx, by, 1.1 + i * 0.2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
-      const playerShadowX = player.x - camX + player.w * 0.5;
-      const playerShadowY = player.y - camY + player.h + 1;
-      const playerShadow = ctx.createRadialGradient(playerShadowX, playerShadowY, 1, playerShadowX, playerShadowY, 13);
-      playerShadow.addColorStop(0, `rgba(6, 12, 20, ${0.26 + playerWater * 0.1})`);
+      const playerShadowX = px + player.w * 0.5;
+      const playerShadowY = py + player.h + 1;
+      const playerShadow = ctx.createRadialGradient(playerShadowX, playerShadowY, 1, playerShadowX, playerShadowY, 16);
+      playerShadow.addColorStop(0, `rgba(6, 12, 20, ${0.28 + playerWater * 0.12})`);
       playerShadow.addColorStop(1, "rgba(6, 12, 20, 0)");
       ctx.fillStyle = playerShadow;
-      ctx.fillRect(playerShadowX - 11, playerShadowY - 4, 22, 12);
+      ctx.fillRect(playerShadowX - 12, playerShadowY - 5, 24, 14);
 
-      ctx.fillStyle = playerWater > 0.12 ? "#bfe4ff" : "#cfe9ff";
-      ctx.fillRect(player.x - camX, player.y - camY, player.w, player.h);
+      drawPersonSilhouette(
+        ctx,
+        px - 1,
+        py - 0.8,
+        1.05,
+        {
+          skin: playerWater > 0.1 ? "#d8ecff" : "#d4e8ff",
+          clothA: playerWater > 0.1 ? "#7fb6ff" : "#72a7f2",
+          clothB: playerWater > 0.1 ? "#4a79b8" : "#3f649d",
+          hair: "#21354e",
+          accent: "#ffe5c9",
+        },
+        mood,
+        motionPhase + panicBlend,
+        facing,
+      );
+
+      const heroRim = ctx.createRadialGradient(px + player.w * 0.5, py + player.h * 0.45, 2, px + player.w * 0.5, py + player.h * 0.45, 14);
+      heroRim.addColorStop(0, `rgba(214, 236, 255, ${0.1 + runBlend * 0.08 + panicBlend * 0.08})`);
+      heroRim.addColorStop(1, "rgba(214, 236, 255, 0)");
+      ctx.fillStyle = heroRim;
+      ctx.fillRect(px - 7, py - 6, player.w + 14, player.h + 12);
 
       if (speedBlur > 0.1) {
         const px = player.x - camX;
@@ -2424,6 +2599,33 @@ export const Dust = () => {
         trail.addColorStop(1, "rgba(206, 232, 255, 0)");
         ctx.fillStyle = trail;
         ctx.fillRect(Math.min(px, px + trailLen * dir), py, Math.abs(trailLen), player.h);
+      }
+
+      if (player.onGround && Math.abs(player.vx) > 55 && playerWater < 0.3) {
+        const dustKick = Math.min(1, Math.abs(player.vx) / 220);
+        const kickDir = Math.sign(player.vx) || 1;
+        for (let i = 0; i < 8; i++) {
+          const tt = i / 8;
+          const dx = px + player.w * 0.5 - kickDir * (2 + tt * 12);
+          const dy = py + player.h - 1 - tt * 5;
+          const w = 3 + dustKick * 6 - tt * 2;
+          const h = 1 + (1 - tt) * 2;
+          ctx.fillStyle = `rgba(226, 194, 146, ${0.05 + dustKick * 0.11 - tt * 0.045})`;
+          ctx.fillRect(dx, dy, Math.max(0.5, w), h);
+        }
+      }
+
+      if (quest.state === "wave") {
+        const shock = clamp01(quest.waveTime * 0.45);
+        const ringCount = 2 + Math.floor(shock * 3);
+        for (let i = 0; i < ringCount; i++) {
+          const rr = 80 + i * 72 + Math.sin(now * 0.004 + i) * 8;
+          ctx.strokeStyle = `rgba(184, 228, 255, ${0.04 + shock * 0.08 - i * 0.012})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(canvasEl.width * 0.5, canvasEl.height * 0.54, rr * 1.25, rr * 0.48, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
 
       if (playerWater > 0.18) {
