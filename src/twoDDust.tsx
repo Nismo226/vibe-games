@@ -21,7 +21,7 @@ const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.1";
+const GAME_VERSION = "v0.1.2";
 
 function idx(x: number, y: number) {
   return y * GRID_W + x;
@@ -616,22 +616,22 @@ export const Dust = () => {
         quest.waveTime += dt;
         quest.tsunamiX += quest.tsunamiSpeed * dt;
 
-        // Inject a real blocky water front from LEFT
-        const frontCell = Math.min(GRID_W - 1, Math.floor(quest.tsunamiX / CELL));
-        for (let x = 0; x <= frontCell; x++) {
-          // keep tsunami lower so player can reasonably build against it
-          for (let y = Math.floor(GRID_H * 0.5); y < Math.floor(GRID_H * 0.78); y++) {
+        // Physical source only at far LEFT (prevents water teleporting through sealed walls)
+        const sourceCols = 3;
+        for (let x = 0; x < sourceCols; x++) {
+          for (let y = Math.floor(GRID_H * 0.36); y < Math.floor(GRID_H * 0.82); y++) {
             if (getCell(x, y) === 0) setCell(x, y, 3);
           }
         }
 
-        // Cheap fluid step for water cells (block-based flow)
-        const steps = 2;
+        // Block-water fluid step with stronger pressure and anti-tunnel behavior
+        const steps = 4;
         for (let step = 0; step < steps; step++) {
           for (let y = GRID_H - 2; y >= 1; y--) {
             for (let x = 1; x < GRID_W - 1; x++) {
               if (getCell(x, y) !== 3) continue;
 
+              // gravity
               if (getCell(x, y + 1) === 0) {
                 setCell(x, y + 1, 3);
                 setCell(x, y, 0);
@@ -639,6 +639,7 @@ export const Dust = () => {
               }
 
               const dir = Math.random() < 0.5 ? -1 : 1;
+              // diagonal spill
               if (getCell(x + dir, y + 1) === 0) {
                 setCell(x + dir, y + 1, 3);
                 setCell(x, y, 0);
@@ -650,6 +651,7 @@ export const Dust = () => {
                 continue;
               }
 
+              // side pressure
               if (getCell(x + dir, y) === 0) {
                 setCell(x + dir, y, 3);
                 setCell(x, y, 0);
@@ -658,10 +660,20 @@ export const Dust = () => {
               if (getCell(x - dir, y) === 0) {
                 setCell(x - dir, y, 3);
                 setCell(x, y, 0);
+                continue;
+              }
+
+              // upward pressure only when compressed from left side (wave pushing right)
+              const compressed = getCell(x - 1, y) === 3 && getCell(x, y + 1) !== 0;
+              if (compressed && getCell(x, y - 1) === 0) {
+                setCell(x, y - 1, 3);
+                setCell(x, y, 0);
               }
             }
           }
         }
+
+        const frontCell = Math.min(GRID_W - 1, Math.floor(quest.tsunamiX / CELL));
 
         const barrier = tribeBarrierStrength();
         const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
