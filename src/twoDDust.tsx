@@ -26,7 +26,7 @@ const JUMP_VEL = -460;
 const COYOTE_TIME = 0.11;
 const JUMP_BUFFER_TIME = 0.12;
 const MAX_DIRT = 50;
-const GAME_VERSION = "v0.1.6";
+const GAME_VERSION = "v0.1.7";
 const BARRIER_GOAL = 16;
 const STEP_HEIGHT = 10;
 
@@ -1097,14 +1097,17 @@ export const Dust = () => {
       if (!ctx) return;
 
       const q = questRef.current;
+      const now = performance.now();
       const waveVisualIntensity =
         q.state === "wave" ? Math.min(1, 0.45 + q.waveTime * 0.25) : q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.55 : 0;
+      const stormMood = q.state === "countdown" ? Math.max(0, 1 - q.timer / 90) * 0.7 : q.state === "wave" ? Math.min(1, 0.4 + q.waveTime * 0.24) : 0;
       const shake = q.state === "wave" ? Math.min(4, 1.2 + q.waveTime * 0.45) : 0;
-      const shakeX = shake > 0 ? Math.sin(performance.now() * 0.04) * shake : 0;
-      const shakeY = shake > 0 ? Math.cos(performance.now() * 0.05) * (shake * 0.6) : 0;
+      const shakeX = shake > 0 ? Math.sin(now * 0.04) * shake : 0;
+      const shakeY = shake > 0 ? Math.cos(now * 0.05) * (shake * 0.6) : 0;
 
       const lookAheadX = Math.max(-120, Math.min(120, player.vx * 0.28));
       const aimLift = Math.max(0, (canvasEl.height * 0.38 - mouseRef.current.y) * 0.85);
+      const cameraTilt = Math.max(-10, Math.min(10, player.vx * 0.016));
       const targetCamX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5 + lookAheadX + shakeX, GRID_W * CELL - canvasEl.width));
       const targetCamY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 - aimLift + shakeY, GRID_H * CELL - canvasEl.height));
 
@@ -1118,28 +1121,47 @@ export const Dust = () => {
       const camY = cam.y;
 
       // background
+      const dayToStorm = Math.min(1, stormMood * 0.9 + waveVisualIntensity * 0.5);
+      const skyTop = `rgba(${10 + Math.floor(dayToStorm * 18)}, ${20 + Math.floor(dayToStorm * 16)}, ${46 + Math.floor(dayToStorm * 22)}, 1)`;
+      const skyMid = `rgba(${17 + Math.floor(dayToStorm * 10)}, ${44 + Math.floor(dayToStorm * 12)}, ${78 + Math.floor(dayToStorm * 18)}, 1)`;
+      const skyBottom = `rgba(${20 + Math.floor(dayToStorm * 12)}, ${54 + Math.floor(dayToStorm * 10)}, ${66 + Math.floor(dayToStorm * 12)}, 1)`;
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
-      bg.addColorStop(0, "#09122a");
-      bg.addColorStop(1, "#0c1d12");
+      bg.addColorStop(0, skyTop);
+      bg.addColorStop(0.52, skyMid);
+      bg.addColorStop(1, skyBottom);
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      // parallax atmosphere (holistic polish)
-      const tSky = performance.now() * 0.00008;
-      const ridgeA = canvasEl.height * 0.44;
-      const ridgeB = canvasEl.height * 0.56;
-      ctx.fillStyle = "rgba(34,64,96,0.35)";
-      for (let i = -1; i <= 8; i++) {
-        const x = i * 170 - ((camX * 0.12 + tSky * 400) % 170);
-        const h = 24 + ((i * 37) % 42);
-        ctx.fillRect(x, ridgeA - h, 210, h);
+      // parallax atmosphere (painted dune layers)
+      const tSky = now * 0.00008;
+      const ridgeA = canvasEl.height * 0.45;
+      const ridgeB = canvasEl.height * 0.58;
+
+      ctx.fillStyle = "rgba(56, 102, 142, 0.3)";
+      ctx.beginPath();
+      ctx.moveTo(-40, canvasEl.height + 20);
+      for (let x = -40; x <= canvasEl.width + 40; x += 70) {
+        const y = ridgeA + Math.sin((x + camX * 0.14 + tSky * 900) * 0.012) * 14 + Math.cos((x + tSky * 500) * 0.022) * 10;
+        ctx.lineTo(x, y);
       }
-      ctx.fillStyle = "rgba(18,40,62,0.42)";
-      for (let i = -1; i <= 7; i++) {
-        const x = i * 220 - ((camX * 0.2 + tSky * 520) % 220);
-        const h = 36 + ((i * 23) % 56);
-        ctx.fillRect(x, ridgeB - h, 260, h);
+      ctx.lineTo(canvasEl.width + 40, canvasEl.height + 20);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(26, 66, 98, 0.42)";
+      ctx.beginPath();
+      ctx.moveTo(-40, canvasEl.height + 20);
+      for (let x = -40; x <= canvasEl.width + 40; x += 64) {
+        const y = ridgeB + Math.sin((x + camX * 0.22 + tSky * 820) * 0.011) * 20 + Math.cos((x + tSky * 620) * 0.017) * 12;
+        ctx.lineTo(x, y);
       }
+      ctx.lineTo(canvasEl.width + 40, canvasEl.height + 20);
+      ctx.closePath();
+      ctx.fill();
+
+      // camera lens drift (visual only)
+      const lensDriftX = Math.sin(now * 0.0006) * 1.2 + cameraTilt * 0.18;
+      const lensDriftY = Math.cos(now * 0.0005) * 0.8;
 
       // world
       const startX = Math.floor(camX / CELL);
@@ -1308,9 +1330,23 @@ export const Dust = () => {
         }
       }
 
+      // world-space depth fog + heat shimmer
+      const horizonFog = ctx.createLinearGradient(0, canvasEl.height * 0.18, 0, canvasEl.height);
+      horizonFog.addColorStop(0, `rgba(180, 204, 224, ${0.03 + stormMood * 0.04})`);
+      horizonFog.addColorStop(1, "rgba(20, 24, 36, 0.14)");
+      ctx.fillStyle = horizonFog;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const shimmerAlpha = 0.018 + Math.sin(now * 0.0017) * 0.006;
+      ctx.fillStyle = `rgba(255, 210, 152, ${Math.max(0.008, shimmerAlpha)})`;
+      for (let y = 0; y < canvasEl.height; y += 28) {
+        const bandOffset = Math.sin(now * 0.001 + y * 0.08) * (1.8 + waveVisualIntensity * 1.4);
+        ctx.fillRect(bandOffset, y, canvasEl.width, 1);
+      }
+
       // directional sunlight + atmospheric shafts
-      const sunX = canvasEl.width * 0.18 + Math.sin(performance.now() * 0.00012) * 40;
-      const sunY = canvasEl.height * 0.12;
+      const sunX = canvasEl.width * 0.18 + Math.sin(now * 0.00012) * 40 + lensDriftX * 8;
+      const sunY = canvasEl.height * 0.12 + lensDriftY * 6;
       const sunGlow = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, canvasEl.height * 0.62);
       sunGlow.addColorStop(0, "rgba(255, 227, 171, 0.24)");
       sunGlow.addColorStop(0.45, "rgba(255, 208, 138, 0.08)");
@@ -1434,6 +1470,18 @@ export const Dust = () => {
         const floodTint = Math.min(0.24, 0.08 + quest.waveTime * 0.012);
         ctx.fillStyle = `rgba(60,132,210,${floodTint})`;
         ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+        // lensy water refraction pass during impact
+        const ripple = 0.6 + Math.sin(now * 0.004) * 0.4;
+        ctx.strokeStyle = `rgba(196, 234, 255, ${0.05 + waveVisualIntensity * 0.08})`;
+        ctx.lineWidth = 1;
+        for (let y = 22; y < canvasEl.height; y += 26) {
+          const wobble = Math.sin(y * 0.08 + now * 0.005) * (2 + waveVisualIntensity * 5) * ripple;
+          ctx.beginPath();
+          ctx.moveTo(wobble, y);
+          ctx.lineTo(canvasEl.width + wobble, y);
+          ctx.stroke();
+        }
 
         const barH = Math.min(52, 12 + quest.waveTime * 4);
         ctx.fillStyle = "rgba(4, 8, 14, 0.62)";
@@ -1651,11 +1699,16 @@ export const Dust = () => {
 
       const hudH = compactHud ? 62 : 110;
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, "rgba(14, 24, 40, 0.82)");
-      hudGrad.addColorStop(1, "rgba(8, 14, 24, 0.76)");
+      hudGrad.addColorStop(0, "rgba(12, 22, 36, 0.8)");
+      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.72)");
+      const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
+      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.2)");
+      hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
       ctx.fillStyle = "rgba(0,0,0,0.24)";
       ctx.fillRect(18, 18, 760, hudH);
       ctx.fillStyle = hudGrad;
+      ctx.fillRect(14, 14, 760, hudH);
+      ctx.fillStyle = hudGlow;
       ctx.fillRect(14, 14, 760, hudH);
       ctx.strokeStyle = "rgba(170,210,255,0.5)";
       ctx.strokeRect(14, 14, 760, hudH);
