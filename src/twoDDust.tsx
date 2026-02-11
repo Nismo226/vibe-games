@@ -419,6 +419,24 @@ export const Dust = () => {
       return false;
     }
 
+    function playerWaterSubmergeRatio(x: number, y: number, w: number, h: number) {
+      const x0 = Math.floor(x / CELL);
+      const y0 = Math.floor(y / CELL);
+      const x1 = Math.floor((x + w - 1) / CELL);
+      const y1 = Math.floor((y + h - 1) / CELL);
+      let total = 0;
+      let water = 0;
+
+      for (let cy = y0; cy <= y1; cy++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          total++;
+          if (getCell(cx, cy) === 3) water++;
+        }
+      }
+
+      return total > 0 ? water / total : 0;
+    }
+
     function isEdgeDirt(x: number, y: number) {
       if (getCell(x, y) !== 1) return false;
       return getCell(x + 1, y) === 0 || getCell(x - 1, y) === 0 || getCell(x, y + 1) === 0 || getCell(x, y - 1) === 0;
@@ -568,9 +586,27 @@ export const Dust = () => {
       else player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt);
       mobile.jumpQueued = false;
 
-      // gravity
+      const waterSubmerge = playerWaterSubmergeRatio(player.x, player.y, player.w, player.h);
+      const inWater = waterSubmerge > 0;
+
+      // gravity + water buoyancy/drag polish
       player.vy += GRAVITY * dt;
+      if (inWater) {
+        const buoyancy = Math.min(0.82, 0.28 + waterSubmerge * 0.58);
+        player.vy -= GRAVITY * dt * buoyancy;
+
+        // swim control: holding jump gives a gentle upward kick while submerged
+        if (jumpPressed) {
+          player.vy -= (520 + 360 * waterSubmerge) * dt;
+        }
+
+        const waterDrag = 0.84 - waterSubmerge * 0.12;
+        player.vx *= Math.max(0.65, waterDrag);
+        player.vy *= Math.max(0.76, waterDrag + 0.05);
+      }
+
       if (player.vy > 900) player.vy = 900;
+      if (inWater && player.vy < -260) player.vy = -260;
 
       // move X
       let nextX = player.x + player.vx * dt;
@@ -601,7 +637,7 @@ export const Dust = () => {
       if (player.onGround) player.coyoteTimer = COYOTE_TIME;
       else player.coyoteTimer = Math.max(0, player.coyoteTimer - dt);
 
-      if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
+      if (!inWater && player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
         player.vy = JUMP_VEL;
         player.onGround = false;
         player.coyoteTimer = 0;
@@ -1141,7 +1177,28 @@ export const Dust = () => {
       }
 
       // player
-      ctx.fillStyle = "#cfe9ff";
+      const playerWater = playerWaterSubmergeRatio(player.x, player.y, player.w, player.h);
+      if (playerWater > 0.02) {
+        const px = player.x - camX;
+        const py = player.y - camY;
+        const wash = ctx.createLinearGradient(px, py, px, py + player.h + 10);
+        wash.addColorStop(0, `rgba(150, 220, 255, ${0.08 + playerWater * 0.12})`);
+        wash.addColorStop(1, "rgba(60, 150, 240, 0)");
+        ctx.fillStyle = wash;
+        ctx.fillRect(px - 7, py - 6, player.w + 14, player.h + 14);
+
+        ctx.fillStyle = `rgba(218, 245, 255, ${0.25 + playerWater * 0.3})`;
+        const bt = performance.now() * 0.003;
+        for (let i = 0; i < 3; i++) {
+          const bx = px + 2 + ((i * 3.9 + bt * (0.8 + i * 0.35)) % Math.max(2, player.w - 2));
+          const by = py + player.h - ((bt * (10 + i * 4) + i * 5) % (player.h + 6));
+          ctx.beginPath();
+          ctx.arc(bx, by, 1.2 + i * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.fillStyle = playerWater > 0.12 ? "#bfe4ff" : "#cfe9ff";
       ctx.fillRect(player.x - camX, player.y - camY, player.w, player.h);
 
       // HUD (auto-compact while actively playing/building)
