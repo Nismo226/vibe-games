@@ -1201,6 +1201,10 @@ export const Dust = () => {
       const sandAnisotropy = clamp01(0.3 + (1 - humidity) * 0.52 + goldenHour * 0.24);
       const waterRefractionStrength = clamp01(0.2 + waveVisualIntensity * 0.62 + humidity * 0.26);
       const cameraPresentation = clamp01(0.34 + cinematicFocus * 0.42 + waveVisualIntensity * 0.2);
+      const duskFactor = clamp01(0.28 + goldenHour * 0.52 + (1 - stormMood) * 0.14);
+      const volumetricLight = clamp01(0.22 + (1 - stormMood) * 0.46 + airGlow * 0.2);
+      const postContrast = clamp01(0.24 + cinematicGradeStrength * 0.56 + impactPulse * 0.18);
+      const uiAccent = clamp01(0.2 + uiCalm * 0.5 + goldenHour * 0.15);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1836,11 +1840,18 @@ export const Dust = () => {
           const x = bx + sx;
           if (x < -8 || x > canvasEl.width + 8) continue;
           const topY = topSolidScreenYAt(x);
-          const localA = shaftAlpha * (0.45 + Math.sin((sx / shaftW) * Math.PI) * 0.55);
+          const localA = shaftAlpha * (0.45 + Math.sin((sx / shaftW) * Math.PI) * 0.55) * (0.75 + volumetricLight * 0.7);
           ctx.fillStyle = `rgba(255, 226, 170, ${localA})`;
           ctx.fillRect(x, -20, 8, Math.max(0, topY + 20));
         }
       }
+
+      const godRays = ctx.createRadialGradient(sunX, sunY, 18, sunX, sunY, canvasEl.height * 0.9);
+      godRays.addColorStop(0, `rgba(255, 232, 184, ${0.035 + volumetricLight * 0.05})`);
+      godRays.addColorStop(0.52, `rgba(255, 214, 162, ${0.012 + volumetricLight * 0.026})`);
+      godRays.addColorStop(1, "rgba(255, 214, 162, 0)");
+      ctx.fillStyle = godRays;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // dust motes floating through light shafts
       const moteCount = Math.floor(34 + (1 - stormMood) * 26);
@@ -2303,6 +2314,16 @@ export const Dust = () => {
         submergeTint.addColorStop(1, `rgba(34, 102, 168, ${0.04 + playerWater * 0.1})`);
         ctx.fillStyle = submergeTint;
         ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+        ctx.strokeStyle = `rgba(206, 240, 255, ${0.05 + playerWater * 0.08})`;
+        ctx.lineWidth = 1;
+        for (let y = 12; y < canvasEl.height; y += 20) {
+          const wobble = Math.sin(now * 0.005 + y * 0.09) * (1.5 + playerWater * 5.5);
+          ctx.beginPath();
+          ctx.moveTo(wobble, y);
+          ctx.lineTo(canvasEl.width + wobble, y);
+          ctx.stroke();
+        }
       }
 
       ctx.restore();
@@ -2349,6 +2370,12 @@ export const Dust = () => {
       ctx.fillRect(14, 14, hudW, hudH);
       ctx.fillStyle = "rgba(220,242,255,0.04)";
       ctx.fillRect(15, 15, hudW - 2, 1);
+
+      const hudAccent = ctx.createLinearGradient(16, 16, 16 + hudW * 0.65, 16);
+      hudAccent.addColorStop(0, `rgba(162, 218, 255, ${0.2 + uiAccent * 0.25})`);
+      hudAccent.addColorStop(1, "rgba(162, 218, 255, 0)");
+      ctx.fillStyle = hudAccent;
+      ctx.fillRect(16, 16, hudW - 4, 2);
 
       // subtle corner brackets for cleaner HUD framing
       ctx.strokeStyle = `rgba(196, 230, 255, ${0.16 + uiSubtlety * 0.16})`;
@@ -2619,6 +2646,13 @@ export const Dust = () => {
       anamorphic.addColorStop(1, `rgba(116, 170, 255, ${0.01 + polarizer * 0.02})`);
       ctx.fillStyle = anamorphic;
       ctx.fillRect(0, canvasEl.height * 0.22, canvasEl.width, canvasEl.height * 0.2);
+
+      const printContrast = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
+      printContrast.addColorStop(0, `rgba(255, 236, 214, ${0.012 + duskFactor * 0.02 + postContrast * 0.015})`);
+      printContrast.addColorStop(0.48, "rgba(0,0,0,0)");
+      printContrast.addColorStop(1, `rgba(4, 12, 24, ${0.02 + postContrast * 0.05})`);
+      ctx.fillStyle = printContrast;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // subtle film-gate flicker around frame to sell camera presentation
       const gatePulse = 0.016 + Math.sin(now * 0.009) * 0.007 + cameraPresentation * 0.014;
