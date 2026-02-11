@@ -1134,6 +1134,16 @@ export const Dust = () => {
       const camX = cam.x;
       const camY = cam.y;
 
+      const topSolidScreenYAt = (screenX: number) => {
+        const wx = screenX + camX;
+        const cx = Math.max(0, Math.min(GRID_W - 1, Math.floor(wx / CELL)));
+        for (let y = 0; y < GRID_H; y++) {
+          const c = getCell(cx, y);
+          if (c === 1 || c === 2) return y * CELL - camY;
+        }
+        return canvasEl.height + 30;
+      };
+
       const cameraSwayX = Math.sin(now * 0.0013 + player.vx * 0.004) * (0.7 + waveVisualIntensity * 1.8);
       const cameraSwayY = Math.cos(now * 0.0011 + player.vy * 0.002) * (0.5 + waveVisualIntensity * 1.25);
       const presentationZoom =
@@ -1646,16 +1656,17 @@ export const Dust = () => {
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       const shaftAlpha = 0.03 + waveVisualIntensity * 0.05;
-      ctx.fillStyle = `rgba(255, 226, 170, ${shaftAlpha})`;
       for (let i = -1; i < 6; i++) {
         const bx = ((i * 220 - camX * 0.09) % (canvasEl.width + 260)) - 120;
-        ctx.beginPath();
-        ctx.moveTo(bx, -20);
-        ctx.lineTo(bx + 80, -20);
-        ctx.lineTo(bx + 260, canvasEl.height + 30);
-        ctx.lineTo(bx + 180, canvasEl.height + 30);
-        ctx.closePath();
-        ctx.fill();
+        const shaftW = 220;
+        for (let sx = 0; sx < shaftW; sx += 8) {
+          const x = bx + sx;
+          if (x < -8 || x > canvasEl.width + 8) continue;
+          const topY = topSolidScreenYAt(x);
+          const localA = shaftAlpha * (0.45 + Math.sin((sx / shaftW) * Math.PI) * 0.55);
+          ctx.fillStyle = `rgba(255, 226, 170, ${localA})`;
+          ctx.fillRect(x, -20, 8, Math.max(0, topY + 20));
+        }
       }
 
       // dust motes floating through light shafts
@@ -1835,8 +1846,12 @@ export const Dust = () => {
           const rx = ((i * 37.17 + tStorm * (220 + storm * 260)) % (canvasEl.width + 90)) - 45;
           const ry = ((i * 61.93 + tStorm * (420 + storm * 520)) % (canvasEl.height + 120)) - 60;
           const len = 7 + storm * 10;
+          const topY = topSolidScreenYAt(rx);
+          if (ry >= topY - 1) continue;
+          const endY = Math.min(ry + len, topY - 1);
+          const endX = rx + slant * ((endY - ry) / Math.max(0.001, len));
           ctx.moveTo(rx, ry);
-          ctx.lineTo(rx + slant, ry + len);
+          ctx.lineTo(endX, endY);
         }
         ctx.stroke();
 
