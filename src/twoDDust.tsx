@@ -80,6 +80,15 @@ export const Dust = () => {
   const mouseRef = useRef({ x: 0, y: 0, left: false, right: false });
   const lastRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const toolRef = useRef({
+    mineCooldown: 0,
+    placeCooldown: 0,
+    blobSize: 0,
+    blobPulse: 0,
+    blobX: 0,
+    blobY: 0,
+    particles: [] as Array<{ x: number; y: number; vx: number; vy: number; life: number; size: number }>,
+  });
 
   const [dirt, setDirt] = useState(0);
   const dirtRef = useRef(0);
@@ -152,36 +161,110 @@ export const Dust = () => {
       return false;
     }
 
-    function applyTools(camX: number, camY: number) {
+    function isEdgeDirt(x: number, y: number) {
+      if (getCell(x, y) !== 1) return false;
+      return getCell(x + 1, y) === 0 || getCell(x - 1, y) === 0 || getCell(x, y + 1) === 0 || getCell(x, y - 1) === 0;
+    }
+
+    function applyTools(camX: number, camY: number, dt: number) {
       const mx = mouseRef.current.x + camX;
       const my = mouseRef.current.y + camY;
       const tc = worldToCell(mx, my);
+      const tool = toolRef.current;
+
+      tool.mineCooldown = Math.max(0, tool.mineCooldown - dt);
+      tool.placeCooldown = Math.max(0, tool.placeCooldown - dt);
+      tool.blobPulse = Math.max(0, tool.blobPulse - dt * 2.4);
+      tool.blobX = mx;
+      tool.blobY = my;
+
+      for (let i = tool.particles.length - 1; i >= 0; i--) {
+        const p = tool.particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.95;
+        p.vy *= 0.95;
+        p.life -= dt;
+        if (p.life <= 0) tool.particles.splice(i, 1);
+      }
 
       const pCenterX = player.x + player.w * 0.5;
       const pCenterY = player.y + player.h * 0.5;
       const dx = tc.x * CELL + CELL * 0.5 - pCenterX;
       const dy = tc.y * CELL + CELL * 0.5 - pCenterY;
       const dist = Math.hypot(dx, dy);
-      if (dist > 96) return;
-
-      if (mouseRef.current.left) {
-        const c = getCell(tc.x, tc.y);
-        if (c === 1) {
-          setCell(tc.x, tc.y, 0);
-          setDirt((v) => v + 1);
-          mouseRef.current.left = false; // one action per click
-        }
+      const reach = 96 + tool.blobSize * 1.6;
+      if (dist > reach) {
+        tool.blobSize = Math.max(0, tool.blobSize - dt * 30);
+        return;
       }
 
-      if (mouseRef.current.right) {
+      if (mouseRef.current.left) {
+        tool.blobSize = Math.min(22, tool.blobSize + dt * 30);
+
+        if (tool.mineCooldown <= 0) {
+          const suckRadius = Math.max(0, Math.floor(tool.blobSize / 7));
+          let mined = false;
+          let minedX = tc.x;
+          let minedY = tc.y;
+
+          // prefer exposed edge dirt first, then fallback to any nearby dirt
+          for (let pass = 0; pass < 2 && !mined; pass++) {
+            for (let r = 0; r <= suckRadius && !mined; r++) {
+              for (let oy = -r; oy <= r && !mined; oy++) {
+                for (let ox = -r; ox <= r && !mined; ox++) {
+                  const tx = tc.x + ox;
+                  const ty = tc.y + oy;
+                  if (!inBounds(tx, ty)) continue;
+                  const valid = pass === 0 ? isEdgeDirt(tx, ty) : getCell(tx, ty) === 1;
+                  if (!valid) continue;
+                  setCell(tx, ty, 0);
+                  setDirt((v) => v + 1);
+                  mined = true;
+                  minedX = tx;
+                  minedY = ty;
+                }
+              }
+            }
+          }
+
+          if (mined) {
+            const speedBoost = tool.blobSize / 22;
+            tool.mineCooldown = Math.max(0.018, 0.05 - speedBoost * 0.022);
+            tool.blobPulse = 1;
+
+            const spawnCount = 1 + Math.floor(tool.blobSize / 8);
+            const srcX = minedX * CELL + CELL * 0.5;
+            const srcY = minedY * CELL + CELL * 0.5;
+            for (let i = 0; i < spawnCount; i++) {
+              const t = 0.14 + Math.random() * 0.14;
+              const toBlobX = mx - srcX;
+              const toBlobY = my - srcY;
+              tool.particles.push({
+                x: srcX + (Math.random() - 0.5) * 4,
+                y: srcY + (Math.random() - 0.5) * 4,
+                vx: toBlobX / t + (Math.random() - 0.5) * 24,
+                vy: toBlobY / t + (Math.random() - 0.5) * 24,
+                life: 0.2 + Math.random() * 0.14,
+                size: 1.2 + Math.random() * 2.1,
+              });
+            }
+            if (tool.particles.length > 140) tool.particles.splice(0, tool.particles.length - 140);
+          }
+        }
+      } else {
+        tool.blobSize = Math.max(0, tool.blobSize - dt * 24);
+      }
+
+      if (mouseRef.current.right && tool.placeCooldown <= 0) {
         const c = getCell(tc.x, tc.y);
         if (c === 0) {
           setDirt((v) => {
             if (v <= 0) return 0;
             setCell(tc.x, tc.y, 1);
+            tool.placeCooldown = 0.07;
             return v - 1;
           });
-          mouseRef.current.right = false;
         }
       }
     }
@@ -238,7 +321,7 @@ export const Dust = () => {
       player.y = Math.max(0, Math.min(player.y, GRID_H * CELL - player.h));
     }
 
-    function draw() {
+    function draw(dt: number) {
       const ctx = canvasEl.getContext("2d");
       if (!ctx) return;
 
@@ -273,6 +356,45 @@ export const Dust = () => {
         }
       }
 
+      // suction particles
+      const tool = toolRef.current;
+      if (tool.particles.length) {
+        for (const p of tool.particles) {
+          const alpha = Math.max(0, Math.min(1, p.life * 3.2));
+          ctx.fillStyle = `rgba(191, 151, 98, ${0.2 + alpha * 0.45})`;
+          ctx.beginPath();
+          ctx.arc(p.x - camX, p.y - camY, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // dirt blob "From Dust" style while sucking
+      if (tool.blobSize > 0.35) {
+        const bx = tool.blobX - camX;
+        const by = tool.blobY - camY;
+        const pulse = tool.blobPulse;
+
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+
+        ctx.fillStyle = `rgba(184, 145, 92, ${0.12 + pulse * 0.22})`;
+        ctx.beginPath();
+        ctx.arc(bx, by, tool.blobSize + pulse * 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = `rgba(130, 96, 58, ${0.26 + pulse * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(bx - tool.blobSize * 0.28, by + tool.blobSize * 0.1, tool.blobSize * 0.66, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = `rgba(208, 171, 111, ${0.32 + pulse * 0.24})`;
+        ctx.beginPath();
+        ctx.arc(bx + tool.blobSize * 0.32, by - tool.blobSize * 0.16, tool.blobSize * 0.48, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
       // mouse target
       const mx = mouseRef.current.x + camX;
       const my = mouseRef.current.y + camY;
@@ -298,9 +420,9 @@ export const Dust = () => {
       ctx.fillText("2D Dust Prototype", 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}`, 28, 60);
-      ctx.fillText("Move: A/D  Jump: W/Space  Suck: Left Click  Place: Right Click", 28, 82);
+      ctx.fillText("Move: A/D  Jump: W/Space  Suck: Hold Left (bigger blob = more pull)  Place: Hold Right", 28, 82);
 
-      applyTools(camX, camY);
+      applyTools(camX, camY, dt);
     }
 
     function frame(ts: number) {
@@ -309,7 +431,7 @@ export const Dust = () => {
       lastRef.current = ts;
 
       update(dt);
-      draw();
+      draw(dt);
       rafRef.current = requestAnimationFrame(frame);
     }
 
