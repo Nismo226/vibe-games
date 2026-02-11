@@ -94,7 +94,7 @@ export const Dust = () => {
     resultText: string;
   }>({
     state: "explore",
-    timer: 60,
+    timer: 90,
     dialogElapsed: 0,
     tsunamiX: -220,
     tsunamiSpeed: 78,
@@ -273,9 +273,9 @@ export const Dust = () => {
 
       e.preventDefault();
       const mobile = mobileRef.current;
-      const leftZone = e.clientX < canvasEl.width * 0.46;
+      const moveZone = e.clientY > canvasEl.height * 0.56;
 
-      if (leftZone && mobile.moveId === -1) {
+      if (moveZone && mobile.moveId === -1) {
         mobile.moveId = e.pointerId;
         mobile.moveStartX = e.clientX;
         mobile.moveStartY = e.clientY;
@@ -565,7 +565,7 @@ export const Dust = () => {
         quest.dialogElapsed += dt;
         if (quest.dialogElapsed >= 2.2) {
           quest.state = "countdown";
-          quest.timer = 60;
+          quest.timer = 90;
           quest.tsunamiX = -220;
           quest.waveTime = 0;
           clearWater();
@@ -981,7 +981,7 @@ export const Dust = () => {
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 60);
       ctx.fillText(objective, 28, 82);
-      ctx.fillText("Mouse: L Suck / R Drop | Touch: Left drag=move/flick jump | Tap+hold suck | Double-tap+hold drop", 28, 104);
+      ctx.fillText("Mouse: L Suck / R Drop | Touch: Bottom-half drag=move/flick jump | Tap+hold suck | Double-tap+hold drop", 28, 104);
 
       // subtle film grain
       const t = performance.now() * 0.001;
@@ -1017,11 +1017,18 @@ export const Dust = () => {
     window.addEventListener("pointercancel", onPointerUp, { passive: false });
 
     const preventMenu = (e: Event) => e.preventDefault();
+    const preventSelect = (e: Event) => e.preventDefault();
     canvasEl.addEventListener("contextmenu", preventMenu);
+    window.addEventListener("dblclick", preventSelect, { passive: false });
+    window.addEventListener("selectstart", preventSelect, { passive: false });
+
     canvasEl.style.touchAction = "none";
     canvasEl.style.userSelect = "none";
-    (canvasEl.style as CSSStyleDeclaration & { webkitTouchCallout?: string }).webkitTouchCallout = "none";
+    (canvasEl.style as CSSStyleDeclaration & { webkitTouchCallout?: string; webkitUserSelect?: string }).webkitTouchCallout = "none";
+    (canvasEl.style as CSSStyleDeclaration & { webkitTouchCallout?: string; webkitUserSelect?: string }).webkitUserSelect = "none";
     document.body.style.overscrollBehavior = "none";
+    document.body.style.userSelect = "none";
+    (document.body.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect = "none";
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -1033,7 +1040,10 @@ export const Dust = () => {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       canvasEl.removeEventListener("contextmenu", preventMenu);
+      window.removeEventListener("dblclick", preventSelect);
+      window.removeEventListener("selectstart", preventSelect);
       document.body.style.overscrollBehavior = "";
+      document.body.style.userSelect = "";
       if (audioRef.current.ctx) {
         audioRef.current.ctx.close();
         audioRef.current.ctx = null;
