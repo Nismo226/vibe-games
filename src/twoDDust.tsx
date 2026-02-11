@@ -150,6 +150,7 @@ export const Dust = () => {
     enabled: boolean;
     lastMineAt: number;
     lastPlaceAt: number;
+    lastAlertAt: number;
     storm: { src: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode } | null;
     stormLevel: number;
   }>({
@@ -157,6 +158,7 @@ export const Dust = () => {
     enabled: false,
     lastMineAt: 0,
     lastPlaceAt: 0,
+    lastAlertAt: 0,
     storm: null,
     stormLevel: 0,
   });
@@ -275,6 +277,39 @@ export const Dust = () => {
       gain.connect(ctx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.1);
+    }
+
+    function playAlertPing(threat: number) {
+      const nowMs = performance.now();
+      const clamped = Math.max(0, Math.min(1, threat));
+      const intervalMs = 980 - clamped * 700;
+      if (nowMs - audioRef.current.lastAlertAt < intervalMs) return;
+      audioRef.current.lastAlertAt = nowMs;
+
+      const ctx = ensureAudio();
+      if (!ctx) return;
+      const t0 = ctx.currentTime;
+
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      const baseFreq = 460 + clamped * 300;
+      osc.frequency.setValueAtTime(baseFreq, t0);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * (1.18 + clamped * 0.16), t0 + 0.07);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.022 + clamped * 0.035, t0 + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.setValueAtTime(240, t0);
+
+      osc.connect(hp);
+      hp.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.14);
     }
 
     function ensureStormAudio() {
@@ -940,6 +975,17 @@ export const Dust = () => {
       const stormWave = quest.state === "wave" ? Math.max(0, Math.min(1, 0.45 + quest.waveTime * 0.2)) : 0;
       updateStormAudio(0.16 + Math.max(stormCountdown, stormWave) * 0.84, dt);
 
+      if (quest.state === "countdown" || quest.state === "wave") {
+        const tribeCellX = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+        const frontCell = Math.max(0, Math.floor(quest.tsunamiX / CELL));
+        const distToTribe = Math.max(0, tribeCellX - frontCell);
+        const proximityThreat = 1 - Math.min(1, distToTribe / 42);
+        const barrierThreat = Math.max(0, 1 - tribeBarrierStrength() / BARRIER_GOAL);
+        const timerThreat = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 42)) : 0.4;
+        const threat = Math.max(proximityThreat * 0.8 + timerThreat * 0.2, barrierThreat * 0.55);
+        if (threat > 0.12) playAlertPing(threat);
+      }
+
       // clamp in world
       player.x = Math.max(0, Math.min(player.x, GRID_W * CELL - player.w));
       player.y = Math.max(0, Math.min(player.y, GRID_H * CELL - player.h));
@@ -1485,6 +1531,29 @@ export const Dust = () => {
         ctx.fillStyle = "#dff2ff";
         ctx.font = "12px system-ui";
         ctx.fillText(`Barrier ${barrierStrength}/${BARRIER_GOAL}`, barX, barY - 6);
+
+        if (questHud.state === "countdown" || questHud.state === "wave") {
+          const tribeCellX = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+          const frontCell = Math.max(0, Math.floor(questHud.tsunamiX / CELL));
+          const distToTribe = Math.max(0, tribeCellX - frontCell);
+          const threat = Math.max(0, Math.min(1, 1 - distToTribe / 42));
+          const tPulse = 0.5 + Math.sin(performance.now() * (0.006 + threat * 0.012)) * 0.5;
+
+          const threatX = barX;
+          const threatY = barY + 18;
+          const threatW = barW;
+          const threatH = 8;
+          ctx.fillStyle = "rgba(20, 28, 40, 0.78)";
+          ctx.fillRect(threatX, threatY, threatW, threatH);
+          ctx.fillStyle = `rgba(${Math.floor(210 + threat * 45)}, ${Math.floor(110 + (1 - threat) * 90)}, 92, ${0.4 + threat * 0.45})`;
+          ctx.fillRect(threatX, threatY, Math.max(2, threatW * threat), threatH);
+          ctx.strokeStyle = `rgba(255, 232, 210, ${0.26 + threat * 0.5 + tPulse * 0.18})`;
+          ctx.strokeRect(threatX - 0.5, threatY - 0.5, threatW + 1, threatH + 1);
+
+          ctx.fillStyle = threat > 0.7 ? "#ffd6c7" : "#d5ebff";
+          ctx.font = "11px system-ui";
+          ctx.fillText(`Wave proximity: ${distToTribe}m`, threatX, threatY + 20);
+        }
 
       }
 
