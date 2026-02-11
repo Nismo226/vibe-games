@@ -92,12 +92,13 @@ export const Dust = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const canvasEl: HTMLCanvasElement = canvas;
     const world = worldRef.current;
     const player = playerRef.current;
 
     function resize() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      canvasEl.width = window.innerWidth;
+      canvasEl.height = window.innerHeight;
     }
 
     function onKeyDown(e: KeyboardEvent) {
@@ -238,24 +239,24 @@ export const Dust = () => {
     }
 
     function draw() {
-      const ctx = canvas.getContext("2d");
+      const ctx = canvasEl.getContext("2d");
       if (!ctx) return;
 
-      const camX = Math.max(0, Math.min(player.x - canvas.width * 0.5, GRID_W * CELL - canvas.width));
-      const camY = Math.max(0, Math.min(player.y - canvas.height * 0.55, GRID_H * CELL - canvas.height));
+      const camX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5, GRID_W * CELL - canvasEl.width));
+      const camY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55, GRID_H * CELL - canvasEl.height));
 
       // background
-      const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       bg.addColorStop(0, "#09122a");
       bg.addColorStop(1, "#0c1d12");
       ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // world
       const startX = Math.floor(camX / CELL);
       const startY = Math.floor(camY / CELL);
-      const endX = Math.min(GRID_W - 1, startX + Math.ceil(canvas.width / CELL) + 1);
-      const endY = Math.min(GRID_H - 1, startY + Math.ceil(canvas.height / CELL) + 1);
+      const endX = Math.min(GRID_W - 1, startX + Math.ceil(canvasEl.width / CELL) + 1);
+      const endY = Math.min(GRID_H - 1, startY + Math.ceil(canvasEl.height / CELL) + 1);
 
       for (let y = startY; y <= endY; y++) {
         for (let x = startX; x <= endX; x++) {
@@ -323,7 +324,7 @@ export const Dust = () => {
     window.addEventListener("mouseup", onMouseUp);
 
     const preventMenu = (e: Event) => e.preventDefault();
-    canvas.addEventListener("contextmenu", preventMenu);
+    canvasEl.addEventListener("contextmenu", preventMenu);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -333,7 +334,7 @@ export const Dust = () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
-      canvas.removeEventListener("contextmenu", preventMenu);
+      canvasEl.removeEventListener("contextmenu", preventMenu);
     };
   }, []);
 
