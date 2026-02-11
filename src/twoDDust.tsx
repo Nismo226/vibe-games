@@ -1238,6 +1238,16 @@ export const Dust = () => {
             ctx.fillStyle = `rgb(${base + 30 + Math.floor(duneWave * 6)}, ${base + 12 + Math.floor(duneWave * 4)}, ${base - 20 - coolShadow})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
+            const windSheen = Math.sin(now * 0.0018 + x * 0.92 - y * 0.34) * 0.5 + 0.5;
+            const microSlope = Math.sin((x * 1.8 + y * 0.7) * 0.26 + now * 0.0013) * 0.5 + 0.5;
+            const roughness = hash2(x * 5 + 3, y * 5 + 11);
+            ctx.fillStyle = `rgba(255, 228, 170, ${0.035 + windSheen * 0.045 + microSlope * 0.025})`;
+            ctx.fillRect(sx + 1, sy + 1, CELL - 2, 1);
+            if (roughness > 0.45) {
+              ctx.fillStyle = `rgba(72, 48, 28, ${0.035 + (roughness - 0.45) * 0.11})`;
+              ctx.fillRect(sx + 1, sy + CELL - 3, CELL - 2, 1);
+            }
+
             const grainHi = hash2(x * 2 + Math.floor(now * 0.0009), y * 2 + 17);
             if (grainHi > 0.57) {
               ctx.fillStyle = `rgba(255, 232, 174, ${0.08 + (grainHi - 0.57) * 0.2})`;
@@ -1316,6 +1326,15 @@ export const Dust = () => {
               ctx.fillStyle = `rgba(26, 16, 9, ${0.05 + cavityShadow * 0.1})`;
               ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
             }
+
+            const nearWater = getCell(x + 1, y) === 3 || getCell(x - 1, y) === 3 || getCell(x, y + 1) === 3 || getCell(x, y - 1) === 3;
+            if (nearWater) {
+              const damp = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              damp.addColorStop(0, "rgba(88, 112, 128, 0.08)");
+              damp.addColorStop(1, "rgba(34, 48, 60, 0.18)");
+              ctx.fillStyle = damp;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
           } else if (c === 3) {
             const t = performance.now() * 0.003;
             const wn = hash2(x + Math.floor(t * 11), y + Math.floor(t * 7));
@@ -1325,9 +1344,16 @@ export const Dust = () => {
             const belowWater = getCell(x, y + 1) === 3;
             const depthBoost = belowWater ? 0.14 : 0;
 
+            let localDepth = 0;
+            for (let d = 1; d <= 6; d++) {
+              if (getCell(x, y + d) === 3) localDepth++;
+              else break;
+            }
+
             const deep = 122 + Math.floor(wn * 24);
             const wavelet = Math.sin(now * 0.003 + x * 0.7 - y * 0.28) * 0.5 + 0.5;
-            ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70)}, ${222 + Math.floor(wn * 26)}, ${0.88 + wavelet * 0.08})`;
+            const depthTint = localDepth * 5;
+            ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70) - depthTint}, ${222 + Math.floor(wn * 26) - Math.floor(localDepth * 2.5)}, ${0.86 + wavelet * 0.1})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const refractionBand = ctx.createLinearGradient(sx, sy, sx + CELL, sy);
@@ -1362,8 +1388,14 @@ export const Dust = () => {
             const depthShade = belowWater ? 0.18 : 0.08;
             const waterBody = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
             waterBody.addColorStop(0, "rgba(148, 222, 255, 0.07)");
-            waterBody.addColorStop(1, `rgba(8, 32, 86, ${depthShade})`);
+            waterBody.addColorStop(1, `rgba(8, 32, 86, ${depthShade + localDepth * 0.018})`);
             ctx.fillStyle = waterBody;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
+            const lateralScatter = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+            lateralScatter.addColorStop(0, `rgba(224, 248, 255, ${0.05 + wavelet * 0.06})`);
+            lateralScatter.addColorStop(1, "rgba(28, 88, 152, 0)");
+            ctx.fillStyle = lateralScatter;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             if (topAir) {
@@ -2026,6 +2058,33 @@ export const Dust = () => {
       ctx.fillStyle = "#e8f5ff";
       ctx.font = "bold 14px system-ui";
       ctx.fillText(grabActive ? "Mode: GRAB" : "Mode: PLACE", toggleX + 16, toggleY + 28);
+
+      // lightweight post stack: bloom-ish lift + edge softness
+      const highlightWash = ctx.createRadialGradient(
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.38,
+        20,
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.38,
+        Math.max(canvasEl.width, canvasEl.height) * 0.85,
+      );
+      highlightWash.addColorStop(0, `rgba(255, 238, 210, ${0.022 + (1 - stormMood) * 0.022})`);
+      highlightWash.addColorStop(1, "rgba(255, 238, 210, 0)");
+      ctx.fillStyle = highlightWash;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      const edgeSoften = ctx.createRadialGradient(
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.5,
+        Math.min(canvasEl.width, canvasEl.height) * 0.24,
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.5,
+        Math.max(canvasEl.width, canvasEl.height) * 0.76,
+      );
+      edgeSoften.addColorStop(0, "rgba(0,0,0,0)");
+      edgeSoften.addColorStop(1, `rgba(8, 14, 24, ${0.09 + humidity * 0.06})`);
+      ctx.fillStyle = edgeSoften;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
       // subtle film grain + chroma jitter
       const t = performance.now() * 0.001;
