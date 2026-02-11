@@ -1140,6 +1140,8 @@ export const Dust = () => {
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
       ctx.scale(presentationZoom, presentationZoom);
+      const cinematicRoll = cameraTilt * 0.0016 + Math.sin(now * 0.0007) * (0.0015 + waveVisualIntensity * 0.002);
+      ctx.rotate(cinematicRoll);
       ctx.translate(-canvasEl.width * 0.5 + cameraSwayX, -canvasEl.height * 0.5 + cameraSwayY);
 
       // cinematic lighting basis (visual only)
@@ -1209,6 +1211,20 @@ export const Dust = () => {
       ctx.lineTo(canvasEl.width + 40, canvasEl.height + 20);
       ctx.closePath();
       ctx.fill();
+
+      // layered atmospheric perspective haze (non-gameplay)
+      const lowMist = ctx.createLinearGradient(0, canvasEl.height * 0.3, 0, canvasEl.height);
+      lowMist.addColorStop(0, `rgba(158, 198, 218, ${0.02 + humidity * 0.03})`);
+      lowMist.addColorStop(0.55, `rgba(108, 152, 184, ${0.05 + humidity * 0.05 + waveVisualIntensity * 0.03})`);
+      lowMist.addColorStop(1, `rgba(34, 56, 84, ${0.1 + humidity * 0.08 + stormMood * 0.05})`);
+      ctx.fillStyle = lowMist;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      ctx.fillStyle = `rgba(236, 206, 154, ${0.012 + (1 - stormMood) * 0.02})`;
+      for (let y = canvasEl.height * 0.22; y < canvasEl.height * 0.75; y += 18) {
+        const drift = Math.sin(now * 0.0011 + y * 0.09) * (1.5 + humidity * 2.3);
+        ctx.fillRect(drift, y, canvasEl.width, 1);
+      }
 
       // camera lens drift (visual only)
       const lensDriftX = Math.sin(now * 0.0006) * 1.2 + cameraTilt * 0.18;
@@ -1346,6 +1362,17 @@ export const Dust = () => {
               damp.addColorStop(1, "rgba(34, 48, 60, 0.18)");
               ctx.fillStyle = damp;
               ctx.fillRect(sx, sy, CELL, CELL);
+
+              const wetSheen = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+              wetSheen.addColorStop(0, "rgba(192, 222, 244, 0.08)");
+              wetSheen.addColorStop(1, "rgba(54, 86, 118, 0.12)");
+              ctx.fillStyle = wetSheen;
+              ctx.fillRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
+
+              if (topAir) {
+                ctx.fillStyle = "rgba(214, 238, 248, 0.14)";
+                ctx.fillRect(sx + 1, sy, CELL - 2, 1);
+              }
             }
           } else if (c === 3) {
             const t = performance.now() * 0.003;
@@ -1368,6 +1395,20 @@ export const Dust = () => {
             const cyanLift = Math.floor((1 - stormMood) * 12 + sunsetWarmth * 6);
             ctx.fillStyle = `rgba(${24 + Math.floor(wn * 18)}, ${deep - Math.floor(depthBoost * 70) - depthTint + cyanLift}, ${226 + Math.floor(wn * 24) - Math.floor(localDepth * 2.8)}, ${0.84 + wavelet * 0.1})`;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const sedimentMix =
+              (getCell(x + 1, y) === 1 ? 1 : 0) +
+              (getCell(x - 1, y) === 1 ? 1 : 0) +
+              (getCell(x, y + 1) === 1 ? 1 : 0) +
+              (getCell(x, y - 1) === 1 ? 1 : 0);
+            if (sedimentMix > 0) {
+              const turbidity = Math.min(0.18, sedimentMix * 0.045);
+              const sediment = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              sediment.addColorStop(0, `rgba(168, 198, 212, ${turbidity * 0.6})`);
+              sediment.addColorStop(1, `rgba(122, 96, 70, ${turbidity})`);
+              ctx.fillStyle = sediment;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             const refractionBand = ctx.createLinearGradient(sx, sy, sx + CELL, sy);
             refractionBand.addColorStop(0, "rgba(190, 238, 255, 0.06)");
@@ -1410,6 +1451,12 @@ export const Dust = () => {
             lateralScatter.addColorStop(1, "rgba(28, 88, 152, 0)");
             ctx.fillStyle = lateralScatter;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const screenReflect = Math.sin(now * 0.0025 + (sx + sy) * 0.03) * 0.5 + 0.5;
+            if (screenReflect > 0.58) {
+              ctx.fillStyle = `rgba(238, 250, 255, ${0.03 + screenReflect * (0.08 + waveVisualIntensity * 0.05)})`;
+              ctx.fillRect(sx + 1, sy + 1 + ((x + y) % 2), CELL - 2, 1);
+            }
 
             if (topAir) {
               const foamBase = 0.54 + waveVisualIntensity * 0.34;
@@ -1978,11 +2025,17 @@ export const Dust = () => {
       ctx.fillStyle = "rgba(0,0,0,0.24)";
       ctx.fillRect(28, 44, Math.min(hudW - 44, 360), 1);
 
+      ctx.shadowColor = "rgba(6, 12, 24, 0.45)";
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 1;
       ctx.fillStyle = "#d8eeff";
       ctx.font = "16px system-ui";
       ctx.fillText(`2D Dust ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
 
       const dirtBarW = Math.min(180, hudW - 280);
       const dirtFill = Math.max(0, Math.min(1, dirtRef.current / MAX_DIRT));
@@ -2129,6 +2182,13 @@ export const Dust = () => {
       edgeSoften.addColorStop(1, `rgba(8, 14, 24, ${0.09 + humidity * 0.06})`);
       ctx.fillStyle = edgeSoften;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+      // very subtle edge chromatic separation for lens character
+      const aberration = 0.012 + humidity * 0.01 + waveVisualIntensity * 0.008;
+      ctx.fillStyle = `rgba(110, 170, 255, ${aberration})`;
+      ctx.fillRect(0, 0, 2, canvasEl.height);
+      ctx.fillStyle = `rgba(255, 136, 124, ${aberration * 0.9})`;
+      ctx.fillRect(canvasEl.width - 2, 0, 2, canvasEl.height);
 
       // subtle film grain + chroma jitter
       const t = performance.now() * 0.001;
