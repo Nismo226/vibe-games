@@ -1127,11 +1127,15 @@ export const Dust = () => {
       const kneeBounce = Math.sin(phase * (cadence * 1.12) + 1.2) * (0.6 + panicAmp * 0.48);
       const shoulderY = y + 8.7 + bob;
       const clothFlicker = Math.sin(phase * (mood === "panic" ? 18 : 9.5) + x * 0.32) * (0.5 + panicAmp * 0.8);
+      const breath = mood === "idle" ? Math.sin(phase * 3.6) * 0.36 : Math.sin(phase * 5.2) * 0.2;
+      const scarfWave = Math.sin(phase * (mood === "panic" ? 17 : 11.5) + facing * 0.8) * (0.8 + runAmp * 0.6);
+      const hipShift = Math.sin(phase * (cadence * 0.5) + 0.7) * (0.36 + runAmp * 0.44);
+      const headTilt = (Math.sin(phase * (mood === "idle" ? 2.6 : 6.3)) * 0.06 + panicJitter * 0.04) * (1 + panicAmp * 0.5);
 
       ctx.save();
       ctx.translate(x + 6, y + 10 + bob);
       ctx.scale(facing * scale, scale);
-      ctx.rotate(bodyLean + panicJitter * 0.09);
+      ctx.rotate(bodyLean + panicJitter * 0.09 + headTilt * 0.2);
       ctx.translate(-6, -10 - bob);
 
       const shadow = ctx.createRadialGradient(x + 6, y + 18, 1, x + 6, y + 18, 11.6);
@@ -1151,6 +1155,36 @@ export const Dust = () => {
       ctx.lineTo(x + 1.4, y + 14.6);
       ctx.closePath();
       ctx.fill();
+
+      const pack = ctx.createLinearGradient(x + 1.6, y + 7.1, x + 4.8, y + 14.8);
+      pack.addColorStop(0, "rgba(34, 46, 66, 0.58)");
+      pack.addColorStop(1, "rgba(14, 22, 36, 0.32)");
+      ctx.fillStyle = pack;
+      ctx.beginPath();
+      ctx.moveTo(x + 2.0, y + 7.1);
+      ctx.lineTo(x + 4.8, y + 7.1);
+      ctx.lineTo(x + 4.4, y + 14.2);
+      ctx.lineTo(x + 1.6, y + 14.2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(255, 220, 188, ${0.14 + panicAmp * 0.2})`;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(x + 3.8, y + 8.2 + breath);
+      ctx.quadraticCurveTo(
+        x + 1.5 - scarfWave * 0.7,
+        y + 9.7 + panicAmp * 0.4,
+        x + 0.2 - scarfWave * 1.3,
+        y + 11.3 + panicAmp * 0.8,
+      );
+      ctx.quadraticCurveTo(
+        x + 1.5 - scarfWave * 0.2,
+        y + 11.0 + panicAmp * 0.3,
+        x + 3.1,
+        y + 10.2 + breath * 0.7,
+      );
+      ctx.stroke();
 
       ctx.strokeStyle = palette.clothB;
       ctx.lineWidth = 2.8;
@@ -1191,9 +1225,13 @@ export const Dust = () => {
       ctx.fill();
 
       ctx.fillStyle = "rgba(255,255,255,0.13)";
-      ctx.fillRect(x + 2.15, shoulderY, 7.9, 1.5);
+      ctx.fillRect(x + 2.15, shoulderY + breath * 0.45, 7.9, 1.5);
       ctx.fillStyle = "rgba(18, 26, 42, 0.4)";
       ctx.fillRect(x + 2.2, y + 11.7, 7.8, 1.35);
+      ctx.fillStyle = "rgba(250, 220, 178, 0.22)";
+      ctx.fillRect(x + 2.35, y + 10.25 + breath * 0.2, 7.6, 0.65);
+      ctx.fillStyle = "rgba(34, 24, 20, 0.42)";
+      ctx.fillRect(x + 2.45, y + 12.55 + hipShift * 0.2, 7.2, 0.78);
 
       ctx.fillStyle = `rgba(255, 224, 194, ${0.17 + panicAmp * 0.24})`;
       ctx.beginPath();
@@ -1272,6 +1310,28 @@ export const Dust = () => {
 
       ctx.fillStyle = `rgba(255, 198, 178, ${0.13 + panicAmp * 0.11})`;
       ctx.fillRect(x + 7.82, y + 4.66, 1.08, 0.86);
+
+      ctx.strokeStyle = `rgba(28, 20, 16, ${0.3 + panicAmp * 0.34})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x + 6.7, y + 2.9);
+      ctx.lineTo(x + 7.95, y + 2.65 - panicAmp * 0.25);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(120, 52, 44, ${0.24 + panicAmp * 0.28})`;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      if (mood === "panic") {
+        ctx.moveTo(x + 7.1, y + 5.95);
+        ctx.quadraticCurveTo(x + 8.3, y + 6.7 + panicAmp * 0.45, x + 9.25, y + 5.95);
+      } else if (mood === "run") {
+        ctx.moveTo(x + 7.3, y + 5.8);
+        ctx.quadraticCurveTo(x + 8.2, y + 6.1, x + 8.95, y + 5.85);
+      } else {
+        ctx.moveTo(x + 7.4, y + 5.85);
+        ctx.quadraticCurveTo(x + 8.2, y + 5.95 + breath * 0.15, x + 8.9, y + 5.8);
+      }
+      ctx.stroke();
 
       if (mood === "panic") {
         ctx.strokeStyle = palette.accent;
@@ -2520,11 +2580,37 @@ export const Dust = () => {
       // falling placed dirt clumps
       const tool = toolRef.current;
       if (tool.falling.length) {
-        for (const f of tool.falling) {
-          ctx.fillStyle = "rgba(140, 106, 64, 0.95)";
+        const tFall = now * 0.006;
+        for (let i = 0; i < tool.falling.length; i++) {
+          const f = tool.falling[i];
+          const fx = f.x - camX;
+          const fy = f.y - camY;
+          const speed = Math.min(1, Math.abs(f.vy) / 680);
+          const wob = Math.sin(tFall * 2 + i * 0.9) * (0.45 + speed * 0.65);
+
+          const clump = ctx.createRadialGradient(fx - 1.2, fy - 1.4, 0.5, fx, fy, 5.8);
+          clump.addColorStop(0, `rgba(236, 192, 132, ${0.55 + speed * 0.18})`);
+          clump.addColorStop(0.6, `rgba(164, 118, 72, ${0.85 + speed * 0.1})`);
+          clump.addColorStop(1, "rgba(76, 52, 30, 0.22)");
+          ctx.fillStyle = clump;
           ctx.beginPath();
-          ctx.arc(f.x - camX, f.y - camY, 3.1, 0, Math.PI * 2);
+          ctx.ellipse(fx + wob * 0.35, fy, 3.2 + speed * 1.2, 2.6 - speed * 0.45, wob * 0.35, 0, Math.PI * 2);
           ctx.fill();
+
+          ctx.fillStyle = `rgba(252, 226, 184, ${0.14 + speed * 0.1})`;
+          ctx.beginPath();
+          ctx.ellipse(fx - 0.8, fy - 0.9, 1.25, 0.8, wob * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (speed > 0.2) {
+            const tailLen = 4 + speed * 10;
+            ctx.strokeStyle = `rgba(214, 170, 122, ${0.09 + speed * 0.18})`;
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.moveTo(fx - wob * 0.45, fy + 0.2);
+            ctx.quadraticCurveTo(fx - wob * 1.4, fy - tailLen * 0.35, fx + wob * 0.25, fy - tailLen);
+            ctx.stroke();
+          }
         }
       }
 
@@ -2665,6 +2751,49 @@ export const Dust = () => {
           ctx.lineWidth = 1.1 - rf * 0.35;
           ctx.beginPath();
           ctx.ellipse(bx, by, ringR, ringR * (0.58 + Math.sin(tBlob * 1.3 + r) * 0.08), Math.sin(tBlob * 0.9 + r) * 0.35, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        const tendrilCount = 6 + Math.floor(Math.min(1, visibleBlob / 12) * 8);
+        ctx.strokeStyle = `rgba(234, 196, 144, ${0.1 + pulse * 0.2 + velocityInfluence * 0.08})`;
+        ctx.lineWidth = 1;
+        for (let i = 0; i < tendrilCount; i++) {
+          const tf = i / Math.max(1, tendrilCount - 1);
+          const ta = tBlob * (1.3 + tf * 0.7) + tf * Math.PI * 2;
+          const innerR = visibleBlob * (0.9 + Math.sin(tBlob * 2 + i) * 0.2);
+          const outerR = visibleBlob * (1.9 + pulse * 1.4 + Math.sin(tBlob * 1.6 + i * 0.6) * 0.3);
+          const sx = bx + Math.cos(ta) * innerR;
+          const sy = by + Math.sin(ta * 1.2) * innerR * 0.64;
+          const cx1 = bx + Math.cos(ta + 0.45) * (innerR + (outerR - innerR) * 0.35);
+          const cy1 = by + Math.sin((ta + 0.45) * 1.2) * (innerR + (outerR - innerR) * 0.35) * 0.62;
+          const ex = bx + Math.cos(ta + 0.72) * outerR;
+          const ey = by + Math.sin((ta + 0.72) * 1.2) * outerR * 0.58;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.quadraticCurveTo(cx1, cy1, ex, ey);
+          ctx.stroke();
+        }
+
+        const swirlPasses = 2;
+        for (let pass = 0; pass < swirlPasses; pass++) {
+          const alphaBase = 0.05 + pass * 0.03 + pulse * 0.08;
+          ctx.strokeStyle = `rgba(${236 - pass * 18}, ${194 - pass * 14}, ${140 - pass * 10}, ${alphaBase})`;
+          ctx.lineWidth = 1.1 - pass * 0.25;
+          ctx.beginPath();
+          const strands = 14 + Math.floor(visibleBlob * 0.6);
+          for (let i = 0; i < strands; i++) {
+            const a = (i / strands) * Math.PI * 2 + tBlob * (1.6 + pass * 0.4);
+            const r0 = visibleBlob * (0.9 + pass * 0.25);
+            const r1 = visibleBlob * (1.7 + pulse * 0.9 + pass * 0.25);
+            const x0 = bx + Math.cos(a) * r0;
+            const y0 = by + Math.sin(a * 1.3) * r0 * 0.62;
+            const x1 = bx + Math.cos(a + 0.5) * ((r0 + r1) * 0.5);
+            const y1 = by + Math.sin((a + 0.5) * 1.3) * ((r0 + r1) * 0.5) * 0.62;
+            const x2 = bx + Math.cos(a + 1) * r1;
+            const y2 = by + Math.sin((a + 1) * 1.3) * r1 * 0.62;
+            ctx.moveTo(x0, y0);
+            ctx.quadraticCurveTo(x1, y1, x2, y2);
+          }
           ctx.stroke();
         }
 
@@ -2834,6 +2963,27 @@ export const Dust = () => {
         trail.addColorStop(1, "rgba(206, 232, 255, 0)");
         ctx.fillStyle = trail;
         ctx.fillRect(Math.min(px, px + trailLen * dir), py, Math.abs(trailLen), player.h);
+      }
+
+      const heroEnergy = clamp01(runBlend * 0.5 + panicBlend * 0.55 + velocityEnergy * 0.35);
+      if (heroEnergy > 0.12) {
+        const corona = ctx.createRadialGradient(px + player.w * 0.5, py + player.h * 0.5, 3, px + player.w * 0.5, py + player.h * 0.5, 24 + heroEnergy * 20);
+        corona.addColorStop(0, `rgba(224, 242, 255, ${0.03 + heroEnergy * 0.05})`);
+        corona.addColorStop(0.55, `rgba(156, 206, 255, ${0.02 + heroEnergy * 0.05})`);
+        corona.addColorStop(1, "rgba(84, 132, 202, 0)");
+        ctx.fillStyle = corona;
+        ctx.fillRect(px - 26, py - 24, player.w + 52, player.h + 48);
+
+        const wakeCount = 4 + Math.floor(heroEnergy * 6);
+        ctx.strokeStyle = `rgba(206, 230, 255, ${0.04 + heroEnergy * 0.1})`;
+        ctx.lineWidth = 1;
+        for (let i = 0; i < wakeCount; i++) {
+          const rf = i / Math.max(1, wakeCount - 1);
+          const rr = 9 + rf * 16 + Math.sin(now * 0.01 + i * 0.9) * 1.8;
+          ctx.beginPath();
+          ctx.ellipse(px + player.w * 0.5, py + player.h * 0.5, rr * (0.75 + rf * 0.1), rr, Math.sin(now * 0.003 + i) * 0.2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
 
       if (player.onGround && Math.abs(player.vx) > 55 && playerWater < 0.3) {
