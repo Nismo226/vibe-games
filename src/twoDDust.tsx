@@ -1120,11 +1120,17 @@ export const Dust = () => {
       const camX = cam.x;
       const camY = cam.y;
 
+      // cinematic lighting basis (visual only)
+      const sunArc = now * 0.00012;
+      const lightDirX = Math.cos(sunArc * 2.3 + 0.45);
+      const lightDirY = Math.sin(sunArc * 1.9 + 0.92);
+      const ambientLift = 0.72 - stormMood * 0.2;
+
       // background
       const dayToStorm = Math.min(1, stormMood * 0.9 + waveVisualIntensity * 0.5);
-      const skyTop = `rgba(${10 + Math.floor(dayToStorm * 18)}, ${20 + Math.floor(dayToStorm * 16)}, ${46 + Math.floor(dayToStorm * 22)}, 1)`;
-      const skyMid = `rgba(${17 + Math.floor(dayToStorm * 10)}, ${44 + Math.floor(dayToStorm * 12)}, ${78 + Math.floor(dayToStorm * 18)}, 1)`;
-      const skyBottom = `rgba(${20 + Math.floor(dayToStorm * 12)}, ${54 + Math.floor(dayToStorm * 10)}, ${66 + Math.floor(dayToStorm * 12)}, 1)`;
+      const skyTop = `rgba(${12 + Math.floor(dayToStorm * 20)}, ${26 + Math.floor(dayToStorm * 17)}, ${54 + Math.floor(dayToStorm * 22)}, 1)`;
+      const skyMid = `rgba(${22 + Math.floor(dayToStorm * 11)}, ${56 + Math.floor(dayToStorm * 14)}, ${92 + Math.floor(dayToStorm * 16)}, 1)`;
+      const skyBottom = `rgba(${28 + Math.floor(dayToStorm * 12)}, ${70 + Math.floor(dayToStorm * 11)}, ${82 + Math.floor(dayToStorm * 12)}, 1)`;
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       bg.addColorStop(0, skyTop);
       bg.addColorStop(0.52, skyMid);
@@ -1201,6 +1207,16 @@ export const Dust = () => {
               ctx.fillRect(sx, sy, CELL, CELL);
             }
 
+            const nx = (leftAir ? -1 : 0) + (rightAir ? 1 : 0);
+            const ny = (topAir ? -1 : 0) + (bottomAir ? 1 : 0);
+            const nLen = Math.max(0.001, Math.hypot(nx, ny));
+            const lambert = ((nx / nLen) * lightDirX + (ny / nLen) * lightDirY) * 0.5 + 0.5;
+            const lightAmt = lambert * 0.15 + ambientLift * 0.07;
+            if (lightAmt > 0.02) {
+              ctx.fillStyle = `rgba(255, 226, 162, ${Math.min(0.2, lightAmt)})`;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
+
             ctx.fillStyle = "rgba(234, 196, 134, 0.24)";
             if (hash2(x + 11, y + 7) > 0.35) ctx.fillRect(sx + 2, sy + 2, 2, 2);
             if (hash2(x + 17, y + 3) > 0.45) ctx.fillRect(sx + 7, sy + 3, 2, 2);
@@ -1247,6 +1263,13 @@ export const Dust = () => {
             ctx.fillStyle = inner;
             ctx.fillRect(sx, sy, CELL, CELL);
 
+            const depthShade = belowWater ? 0.18 : 0.08;
+            const waterBody = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+            waterBody.addColorStop(0, "rgba(148, 222, 255, 0.07)");
+            waterBody.addColorStop(1, `rgba(8, 32, 86, ${depthShade})`);
+            ctx.fillStyle = waterBody;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
             if (topAir) {
               const foamBase = 0.54 + waveVisualIntensity * 0.34;
               ctx.fillStyle = `rgba(236,252,255,${foamBase})`;
@@ -1278,6 +1301,12 @@ export const Dust = () => {
               ctx.fillRect(sx + 1, sy + 4, CELL - 4, 1);
             }
 
+            const refract = Math.sin(t * 1.7 + x * 0.9 + y * 0.3) * 0.5 + 0.5;
+            if (refract > 0.62) {
+              ctx.fillStyle = `rgba(236, 252, 255, ${0.08 + refract * 0.08})`;
+              ctx.fillRect(sx + 1, sy + 6, CELL - 3, 1);
+            }
+
             if (leftAir) {
               ctx.fillStyle = "rgba(198,236,255,0.16)";
               ctx.fillRect(sx, sy, 1, CELL);
@@ -1305,6 +1334,15 @@ export const Dust = () => {
             rockGrad.addColorStop(1, "rgba(18, 22, 30, 0.22)");
             ctx.fillStyle = rockGrad;
             ctx.fillRect(sx, sy, CELL, CELL);
+
+            const rockNx = (leftAir ? -1 : 0) + (rightAir ? 1 : 0);
+            const rockNy = (topAir ? -1 : 0) + (getCell(x, y + 1) === 0 ? 1 : 0);
+            const rockLen = Math.max(0.001, Math.hypot(rockNx, rockNy));
+            const rockLambert = ((rockNx / rockLen) * lightDirX + (rockNy / rockLen) * lightDirY) * 0.5 + 0.5;
+            if (rockLambert > 0.2) {
+              ctx.fillStyle = `rgba(206, 214, 232, ${0.03 + rockLambert * 0.08})`;
+              ctx.fillRect(sx, sy, CELL, CELL);
+            }
 
             if (hash2(x + 7, y + 13) > 0.5) {
               ctx.fillStyle = "rgba(132, 142, 164, 0.25)";
@@ -1561,6 +1599,21 @@ export const Dust = () => {
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
+      // gentle lens chroma at frame edges
+      const chromaEdge = ctx.createRadialGradient(
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.5,
+        Math.min(canvasEl.width, canvasEl.height) * 0.28,
+        canvasEl.width * 0.5,
+        canvasEl.height * 0.5,
+        Math.max(canvasEl.width, canvasEl.height) * 0.7,
+      );
+      chromaEdge.addColorStop(0, "rgba(0,0,0,0)");
+      chromaEdge.addColorStop(0.75, "rgba(96,160,255,0.02)");
+      chromaEdge.addColorStop(1, "rgba(255,140,120,0.05)");
+      ctx.fillStyle = chromaEdge;
+      ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
       // split-toning grade: warm highlights + cool shadows
       const coolShadow = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
       coolShadow.addColorStop(0, "rgba(28, 50, 96, 0.05)");
@@ -1697,21 +1750,22 @@ export const Dust = () => {
       const expectedBarrier = Math.floor(BARRIER_GOAL * (0.2 + countdownProgress * 0.75));
       const urgencyGap = barrierActive ? Math.max(0, expectedBarrier - barrierStrength) : 0;
 
-      const hudH = compactHud ? 62 : 110;
+      const hudH = compactHud ? 56 : 94;
+      const hudW = Math.min(690, canvasEl.width - 32);
       const hudGrad = ctx.createLinearGradient(14, 14, 14, 14 + hudH);
-      hudGrad.addColorStop(0, "rgba(12, 22, 36, 0.8)");
-      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.72)");
+      hudGrad.addColorStop(0, "rgba(10, 20, 34, 0.62)");
+      hudGrad.addColorStop(1, "rgba(6, 12, 22, 0.52)");
       const hudGlow = ctx.createRadialGradient(120, 22, 8, 120, 22, 260);
-      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.2)");
+      hudGlow.addColorStop(0, "rgba(146, 210, 255, 0.13)");
       hudGlow.addColorStop(1, "rgba(146, 210, 255, 0)");
-      ctx.fillStyle = "rgba(0,0,0,0.24)";
-      ctx.fillRect(18, 18, 760, hudH);
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.fillRect(18, 18, hudW, hudH);
       ctx.fillStyle = hudGrad;
-      ctx.fillRect(14, 14, 760, hudH);
+      ctx.fillRect(14, 14, hudW, hudH);
       ctx.fillStyle = hudGlow;
-      ctx.fillRect(14, 14, 760, hudH);
-      ctx.strokeStyle = "rgba(170,210,255,0.5)";
-      ctx.strokeRect(14, 14, 760, hudH);
+      ctx.fillRect(14, 14, hudW, hudH);
+      ctx.strokeStyle = "rgba(170,210,255,0.35)";
+      ctx.strokeRect(14, 14, hudW, hudH);
 
       const hudWind = getStormWind(questHud);
       const windLevel = Math.min(1, Math.abs(hudWind.gust) / 88);
@@ -1729,9 +1783,9 @@ export const Dust = () => {
       }
 
       if (barrierActive || questHud.state === "success" || questHud.state === "fail") {
-        const barX = 516;
-        const barY = 44;
-        const barW = 238;
+        const barW = 210;
+        const barX = 14 + hudW - barW - 16;
+        const barY = 38;
         const barH = 12;
         const fillW = Math.round(barW * barrierRatio);
         const pulse = urgencyGap > 0 ? 0.55 + Math.sin(performance.now() * 0.012) * 0.45 : 0.25;
