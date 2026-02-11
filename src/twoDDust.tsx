@@ -689,8 +689,13 @@ export const Dust = () => {
       const ctx = canvasEl.getContext("2d");
       if (!ctx) return;
 
-      const camX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5, GRID_W * CELL - canvasEl.width));
-      const camY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55, GRID_H * CELL - canvasEl.height));
+      const q = questRef.current;
+      const shake = q.state === "wave" ? Math.min(4, 1.2 + q.waveTime * 0.45) : 0;
+      const shakeX = shake > 0 ? Math.sin(performance.now() * 0.04) * shake : 0;
+      const shakeY = shake > 0 ? Math.cos(performance.now() * 0.05) * (shake * 0.6) : 0;
+
+      const camX = Math.max(0, Math.min(player.x - canvasEl.width * 0.5 + shakeX, GRID_W * CELL - canvasEl.width));
+      const camY = Math.max(0, Math.min(player.y - canvasEl.height * 0.55 + shakeY, GRID_H * CELL - canvasEl.height));
 
       // background
       const bg = ctx.createLinearGradient(0, 0, 0, canvasEl.height);
@@ -752,11 +757,41 @@ export const Dust = () => {
               ctx.fillRect(sx + CELL - 2, sy, 2, CELL);
             }
           } else if (c === 3) {
-            const wn = hash2(x + Math.floor(performance.now() * 0.03), y);
-            ctx.fillStyle = `rgba(${55 + Math.floor(wn * 25)}, ${135 + Math.floor(wn * 45)}, ${210 + Math.floor(wn * 30)}, 0.85)`;
+            const t = performance.now() * 0.003;
+            const wn = hash2(x + Math.floor(t * 11), y + Math.floor(t * 7));
+            const topAir = getCell(x, y - 1) === 0;
+            const leftAir = getCell(x - 1, y) === 0;
+            const rightAir = getCell(x + 1, y) === 0;
+
+            const deep = 130 + Math.floor(wn * 25);
+            ctx.fillStyle = `rgba(${28 + Math.floor(wn * 22)}, ${deep}, ${220 + Math.floor(wn * 24)}, 0.9)`;
             ctx.fillRect(sx, sy, CELL, CELL);
-            ctx.fillStyle = "rgba(220,245,255,0.34)";
-            ctx.fillRect(sx, sy, CELL, 2);
+
+            const inner = ctx.createLinearGradient(sx, sy, sx + CELL, sy + CELL);
+            inner.addColorStop(0, "rgba(190,238,255,0.18)");
+            inner.addColorStop(1, "rgba(12,78,156,0.22)");
+            ctx.fillStyle = inner;
+            ctx.fillRect(sx, sy, CELL, CELL);
+
+            if (topAir) {
+              ctx.fillStyle = "rgba(232,250,255,0.62)";
+              ctx.fillRect(sx, sy, CELL, 2);
+              ctx.fillStyle = "rgba(210,244,255,0.22)";
+              ctx.fillRect(sx, sy + 2, CELL, 1);
+            }
+            if (leftAir) {
+              ctx.fillStyle = "rgba(198,236,255,0.16)";
+              ctx.fillRect(sx, sy, 1, CELL);
+            }
+            if (rightAir) {
+              ctx.fillStyle = "rgba(14,74,146,0.2)";
+              ctx.fillRect(sx + CELL - 1, sy, 1, CELL);
+            }
+
+            if (hash2(x + 19, y + Math.floor(t * 13)) > 0.62) {
+              ctx.fillStyle = "rgba(240,252,255,0.34)";
+              ctx.fillRect(sx + 2, sy + 3, 2, 1);
+            }
           } else {
             ctx.fillStyle = "#5b5f68";
             ctx.fillRect(sx, sy, CELL, CELL);
@@ -801,15 +836,38 @@ export const Dust = () => {
       }
 
       if (quest.state === "wave" || quest.state === "success" || quest.state === "fail") {
-        // visible tsunami front from LEFT
+        // cinematic tsunami front from LEFT
         const frontX = quest.tsunamiX - camX;
-        ctx.fillStyle = "rgba(34,120,210,0.25)";
-        ctx.fillRect(frontX - 24, 0, 24, canvasEl.height);
-        ctx.fillStyle = "rgba(210,244,255,0.4)";
-        for (let i = 0; i < 11; i++) {
-          const y = (i * 57 + performance.now() * 0.09) % canvasEl.height;
-          ctx.fillRect(frontX - 14 + Math.sin(i + performance.now() * 0.005) * 4, y, 14, 2);
+        const t = performance.now() * 0.001;
+
+        const wall = ctx.createLinearGradient(frontX - 72, 0, frontX + 8, 0);
+        wall.addColorStop(0, "rgba(18,84,170,0.08)");
+        wall.addColorStop(0.55, "rgba(42,132,222,0.36)");
+        wall.addColorStop(1, "rgba(176,228,255,0.62)");
+        ctx.fillStyle = wall;
+        ctx.fillRect(frontX - 72, 0, 80, canvasEl.height);
+
+        // crest foam ribbons
+        for (let i = 0; i < 18; i++) {
+          const y = (i * 41 + t * 120) % canvasEl.height;
+          const wobble = Math.sin(t * 4 + i * 0.8) * 7;
+          ctx.fillStyle = "rgba(225,247,255,0.45)";
+          ctx.fillRect(frontX - 10 + wobble, y, 22, 2);
         }
+
+        // mist spray near crest
+        ctx.fillStyle = "rgba(214,243,255,0.18)";
+        for (let i = 0; i < 80; i++) {
+          const px = frontX - 16 + ((i * 37.13 + t * 310) % 26);
+          const py = ((i * 53.77 + t * 280) % canvasEl.height);
+          ctx.fillRect(px, py, 1, 1);
+        }
+      }
+
+      if (quest.state === "wave") {
+        const floodTint = Math.min(0.2, 0.06 + quest.waveTime * 0.01);
+        ctx.fillStyle = `rgba(60,132,210,${floodTint})`;
+        ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
       }
 
       // ambient dust haze + cinematic grading
