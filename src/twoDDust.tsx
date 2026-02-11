@@ -10,6 +10,8 @@ type Player = {
   w: number;
   h: number;
   onGround: boolean;
+  coyoteTimer: number;
+  jumpBufferTimer: number;
 };
 
 type QuestState = "explore" | "dialog" | "countdown" | "wave" | "success" | "fail";
@@ -20,6 +22,8 @@ const GRID_H = 56;
 const GRAVITY = 1300;
 const MOVE_SPEED = 240;
 const JUMP_VEL = -460;
+const COYOTE_TIME = 0.11;
+const JUMP_BUFFER_TIME = 0.12;
 const MAX_DIRT = 50;
 const GAME_VERSION = "v0.1.4";
 const BARRIER_GOAL = 16;
@@ -85,6 +89,8 @@ export const Dust = () => {
     w: 10,
     h: 18,
     onGround: false,
+    coyoteTimer: 0,
+    jumpBufferTimer: 0,
   });
   const tribeRef = useRef({ x: (GRID_W - 14) * CELL, y: 30 * CELL, w: 12, h: 18 });
   const questRef = useRef<{
@@ -556,12 +562,10 @@ export const Dust = () => {
       if (left) player.vx = -MOVE_SPEED * Math.max(0.6, Math.abs(mobile.moveAxisX) || 1);
       if (right) player.vx = MOVE_SPEED * Math.max(0.6, Math.abs(mobile.moveAxisX) || 1);
 
-      // jump (keyboard + upward flick on left zone)
-      const jump = keys["w"] || keys["arrowup"] || keys[" "] || mobile.jumpQueued;
-      if (jump && player.onGround) {
-        player.vy = JUMP_VEL;
-        player.onGround = false;
-      }
+      // jump buffering + coyote time (for less frustrating platforming)
+      const jumpPressed = keys["w"] || keys["arrowup"] || keys[" "] || mobile.jumpQueued;
+      if (jumpPressed) player.jumpBufferTimer = JUMP_BUFFER_TIME;
+      else player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt);
       mobile.jumpQueued = false;
 
       // gravity
@@ -592,6 +596,16 @@ export const Dust = () => {
         player.vy = 0;
       } else {
         player.y = nextY;
+      }
+
+      if (player.onGround) player.coyoteTimer = COYOTE_TIME;
+      else player.coyoteTimer = Math.max(0, player.coyoteTimer - dt);
+
+      if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
+        player.vy = JUMP_VEL;
+        player.onGround = false;
+        player.coyoteTimer = 0;
+        player.jumpBufferTimer = 0;
       }
 
       const quest = questRef.current;
