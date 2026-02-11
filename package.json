@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "build:pages:snake": "VITE_DEPLOY_TARGET=pages VITE_PAGES_BASE=ultimate-snake pnpm run build:local",
     "build:pages:arc": "VITE_DEPLOY_TARGET=pages VITE_PAGES_BASE=ultimate-brick-breaker VITE_GAME=arc pnpm run build:local",
-    "build:pages:dust": "VITE_DEPLOY_TARGET=pages VITE_PAGES_BASE=element-weaver VITE_GAME=dust pnpm run build:local",
+    "build:pages:dust": "VITE_DEPLOY_TARGET=pages VITE_PAGES_BASE=2d-dust VITE_GAME=twoDDust pnpm run build:local",
     "build:pages": "pnpm run build:pages:snake && pnpm run build:pages:arc && pnpm run build:pages:dust && node scripts/postbuild-pages.mjs",
     "preview:pages": "pnpm run build:pages && (cd dist && python3 -m http.server 4173)",
     "tauri": "bash -lc 'source $HOME/.cargo/env >/dev/null 2>&1 || true; tauri \"$@\"' --",
