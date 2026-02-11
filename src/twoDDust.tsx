@@ -673,6 +673,16 @@ export const Dust = () => {
           let spawnX = tc.x;
           let spawnY = tc.y;
 
+          // barrier assist polish: during defense, softly snap placements to nearest missing wall slot
+          const quest = questRef.current;
+          if (quest.state === "countdown" || quest.state === "wave") {
+            const gap = findNearestBarrierGap(mx, my);
+            if (gap && gap.dist <= CELL * 8) {
+              spawnX = gap.x;
+              spawnY = gap.y;
+            }
+          }
+
           // if pointing into solid, spawn slightly above nearest open space
           if (inBounds(spawnX, spawnY) && getCell(spawnX, spawnY) !== 0) {
             for (let up = 1; up <= 6; up++) {
@@ -683,7 +693,7 @@ export const Dust = () => {
             }
           }
 
-          if (inBounds(spawnX, spawnY)) {
+          if (inBounds(spawnX, spawnY) && getCell(spawnX, spawnY) === 0) {
             tool.falling.push({ x: spawnX * CELL + CELL * 0.5, y: spawnY * CELL + CELL * 0.5, vy: 0 });
             if (tool.falling.length > 220) tool.falling.splice(0, tool.falling.length - 220);
             setDirt((v) => Math.max(0, v - 1));
