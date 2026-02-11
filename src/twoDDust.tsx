@@ -496,8 +496,8 @@ export const Dust = () => {
       const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
       const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
       return {
-        x0: tcx + 1,
-        x1: tcx + 5,
+        x0: tcx - 5,
+        x1: tcx - 1,
         y0: tcy - 5,
         y1: tcy + 2,
       };
@@ -514,26 +514,6 @@ export const Dust = () => {
         }
       }
       return score;
-    }
-
-    function findNearestBarrierGap(fromX: number, fromY: number) {
-      const plan = getBarrierPlan();
-      let best: { x: number; y: number; dist: number } | null = null;
-
-      for (let y = plan.y0; y <= plan.y1; y++) {
-        for (let x = plan.x0; x <= plan.x1; x++) {
-          if (!inBounds(x, y)) continue;
-          const c = getCell(x, y);
-          if (c !== 0 && c !== 3) continue;
-
-          const wx = x * CELL + CELL * 0.5;
-          const wy = y * CELL + CELL * 0.5;
-          const dist = Math.hypot(wx - fromX, wy - fromY);
-          if (!best || dist < best.dist) best = { x, y, dist };
-        }
-      }
-
-      return best;
     }
 
     function collidesRect(x: number, y: number, w: number, h: number) {
@@ -706,16 +686,6 @@ export const Dust = () => {
         if (dirtRef.current > 0) {
           let spawnX = tc.x;
           let spawnY = tc.y;
-
-          // barrier assist polish: during defense, softly snap placements to nearest missing wall slot
-          const quest = questRef.current;
-          if (quest.state === "countdown" || quest.state === "wave") {
-            const gap = findNearestBarrierGap(mx, my);
-            if (gap && gap.dist <= CELL * 8) {
-              spawnX = gap.x;
-              spawnY = gap.y;
-            }
-          }
 
           // if pointing into solid, spawn slightly above nearest open space
           if (inBounds(spawnX, spawnY) && getCell(spawnX, spawnY) !== 0) {
@@ -923,8 +893,7 @@ export const Dust = () => {
           }
         }
 
-        const barrier = tribeBarrierStrength();
-        const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
+          const tcx = Math.floor((tribe.x + tribe.w * 0.5) / CELL);
         const tcy = Math.floor((tribe.y + tribe.h * 0.5) / CELL);
         let tribeWet = false;
         for (let y = tcy - 2; y <= tcy + 2 && !tribeWet; y++) {
@@ -933,6 +902,7 @@ export const Dust = () => {
           }
         }
 
+        const barrier = tribeBarrierStrength();
         const wavePassed = frontCell >= GRID_W - 2 && quest.waveTime > 5;
         if (tribeWet && barrier < BARRIER_GOAL) {
           quest.state = "fail";
@@ -945,7 +915,7 @@ export const Dust = () => {
 
       const stormCountdown = quest.state === "countdown" ? Math.max(0, Math.min(1, 1 - quest.timer / 90)) : 0;
       const stormWave = quest.state === "wave" ? Math.max(0, Math.min(1, 0.45 + quest.waveTime * 0.2)) : 0;
-      updateStormAudio(Math.max(stormCountdown, stormWave), dt);
+      updateStormAudio(0.16 + Math.max(stormCountdown, stormWave) * 0.84, dt);
 
       // clamp in world
       player.x = Math.max(0, Math.min(player.x, GRID_W * CELL - player.w));
@@ -1124,12 +1094,6 @@ export const Dust = () => {
 
       const tribe = tribeRef.current;
       const quest = questRef.current;
-      const barrier = tribeBarrierStrength();
-      const barrierPct = Math.max(0, Math.min(1, barrier / BARRIER_GOAL));
-      const barrierLabel = barrier >= BARRIER_GOAL ? "Strong" : barrier >= Math.floor(BARRIER_GOAL * 0.65) ? "Risky" : "Weak";
-      const barrierMissing = Math.max(0, BARRIER_GOAL - barrier);
-      const nearestGap = findNearestBarrierGap(player.x + player.w * 0.5, player.y + player.h * 0.5);
-      const barrierPlan = getBarrierPlan();
 
       // objective beacon + off-screen compass for tribe
       const tribeCenterWX = tribe.x + tribe.w * 0.5;
@@ -1225,80 +1189,7 @@ export const Dust = () => {
         ctx.fillText("Elder: A tsunami is coming! Build us a sand wall!", toastX + 8, ty - 30);
       }
 
-      // build guidance polish: projected wall blueprint + nearest missing slot arrow
-      if (quest.state === "countdown" || quest.state === "wave") {
-        for (let by = barrierPlan.y0; by <= barrierPlan.y1; by++) {
-          for (let bx = barrierPlan.x0; bx <= barrierPlan.x1; bx++) {
-            if (!inBounds(bx, by)) continue;
-            const c = getCell(bx, by);
-            const sx = bx * CELL - camX;
-            const sy = by * CELL - camY;
-
-            if (c === 1) {
-              ctx.strokeStyle = "rgba(96, 232, 158, 0.38)";
-              ctx.lineWidth = 1;
-              ctx.strokeRect(sx + 1, sy + 1, CELL - 2, CELL - 2);
-            } else if (c === 0 || c === 3) {
-              const pulse = 0.2 + 0.18 * (1 + Math.sin(performance.now() * 0.008 + bx * 0.7 + by * 1.1));
-              ctx.fillStyle = `rgba(255, 210, 120, ${pulse})`;
-              ctx.fillRect(sx + 2, sy + 2, CELL - 4, CELL - 4);
-              ctx.strokeStyle = "rgba(255, 226, 152, 0.48)";
-              ctx.lineWidth = 1;
-              ctx.strokeRect(sx + 2, sy + 2, CELL - 4, CELL - 4);
-            }
-          }
-        }
-      }
-
-      if ((quest.state === "countdown" || quest.state === "wave") && nearestGap) {
-        const gapX = nearestGap.x * CELL + CELL * 0.5 - camX;
-        const gapY = nearestGap.y * CELL + CELL * 0.5 - camY;
-        const pulse = 0.55 + Math.sin(performance.now() * 0.01) * 0.25;
-
-        ctx.strokeStyle = `rgba(255, 214, 125, ${0.55 + pulse * 0.35})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(gapX, gapY, 7 + pulse * 2.5, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.fillStyle = `rgba(255, 223, 145, ${0.24 + pulse * 0.2})`;
-        ctx.beginPath();
-        ctx.arc(gapX, gapY, 4 + pulse, 0, Math.PI * 2);
-        ctx.fill();
-
-        const playerSX = player.x + player.w * 0.5 - camX;
-        const playerSY = player.y + player.h * 0.5 - camY;
-        const dxGap = gapX - playerSX;
-        const dyGap = gapY - playerSY;
-        const dGap = Math.max(1, Math.hypot(dxGap, dyGap));
-
-        if (dGap > 26) {
-          const ux = dxGap / dGap;
-          const uy = dyGap / dGap;
-          const arrowX = playerSX + ux * 22;
-          const arrowY = playerSY + uy * 22;
-          const ang = Math.atan2(uy, ux);
-
-          ctx.save();
-          ctx.translate(arrowX, arrowY);
-          ctx.rotate(ang);
-          ctx.fillStyle = "rgba(255, 216, 138, 0.9)";
-          ctx.beginPath();
-          ctx.moveTo(12, 0);
-          ctx.lineTo(-8, -6);
-          ctx.lineTo(-8, 6);
-          ctx.closePath();
-          ctx.fill();
-          ctx.restore();
-
-          ctx.strokeStyle = "rgba(255, 216, 138, 0.45)";
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.moveTo(playerSX + ux * 14, playerSY + uy * 14);
-          ctx.lineTo(gapX - ux * 10, gapY - uy * 10);
-          ctx.stroke();
-        }
-      }
+      // removed barrier guidance overlays by request
 
       // removed legacy white wave overlays; keep only block-water visuals
 
@@ -1484,31 +1375,9 @@ export const Dust = () => {
       ctx.font = "14px system-ui";
       ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
 
-      if (questHud.state === "countdown" || questHud.state === "wave" || questHud.state === "success" || questHud.state === "fail") {
-        const meterX = 28;
-        const meterY = compactHud ? 74 : 82;
-        const meterW = 248;
-        const meterH = 10;
-        ctx.fillStyle = "rgba(20,35,55,0.82)";
-        ctx.fillRect(meterX, meterY, meterW, meterH);
-        const fillW = Math.floor(meterW * barrierPct);
-        const meterColor = barrierPct >= 1 ? "#56d58f" : barrierPct >= 0.65 ? "#f0be67" : "#ea6d6d";
-        ctx.fillStyle = meterColor;
-        ctx.fillRect(meterX, meterY, fillW, meterH);
-        const goalX = meterX + meterW;
-        ctx.strokeStyle = "rgba(230,245,255,0.8)";
-        ctx.beginPath();
-        ctx.moveTo(goalX, meterY - 2);
-        ctx.lineTo(goalX, meterY + meterH + 2);
-        ctx.stroke();
-        ctx.fillStyle = "#d8eeff";
-        ctx.font = "12px system-ui";
-        ctx.fillText(`Barrier: ${barrier}/${BARRIER_GOAL} (${barrierLabel})${barrierMissing > 0 ? ` · Need ${barrierMissing}` : ""}`, meterX + meterW + 12, meterY + 9);
-      }
-
       if (!compactHud) {
-        ctx.fillText(objective, 28, questHud.state === "countdown" || questHud.state === "wave" || questHud.state === "success" || questHud.state === "fail" ? 100 : 82);
-        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, questHud.state === "countdown" || questHud.state === "wave" || questHud.state === "success" || questHud.state === "fail" ? 122 : 104);
+        ctx.fillText(objective, 28, 82);
+        ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, 104);
       }
 
       if (questHud.state === "success" || questHud.state === "fail") {
