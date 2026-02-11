@@ -1408,6 +1408,14 @@ export const Dust = () => {
       const countdownProgress = questHud.state === "countdown" ? Math.max(0, Math.min(1, 1 - questHud.timer / 90)) : questHud.state === "wave" ? 1 : 0;
       const expectedBarrier = Math.floor(BARRIER_GOAL * (0.2 + countdownProgress * 0.75));
       const urgencyGap = barrierActive ? Math.max(0, expectedBarrier - barrierStrength) : 0;
+      const tsunamiDanger =
+        questHud.state === "countdown"
+          ? countdownProgress
+          : questHud.state === "wave"
+            ? Math.min(1, 0.66 + questHud.waveTime * 0.2)
+            : 0;
+      const barrierDeficitRatio = barrierActive ? Math.max(0, Math.min(1, urgencyGap / Math.max(1, BARRIER_GOAL))) : 0;
+      const dangerLevel = Math.max(tsunamiDanger * (0.44 + barrierDeficitRatio * 0.92), questHud.state === "wave" ? 0.34 : 0);
 
       ctx.fillStyle = "rgba(10,18,30,0.72)";
       ctx.fillRect(14, 14, 760, compactHud ? 62 : 110);
@@ -1464,6 +1472,57 @@ export const Dust = () => {
         ctx.fillStyle = "#d8eeff";
         ctx.fillText(objective, 28, objectiveY);
         ctx.fillText("Mouse: L Suck / R Drop | Touch: Left joystick move/jump | Right side grab/place + toggle", 28, objectiveY + 22);
+      }
+
+      // tsunami danger strip: improves readability of incoming threat + barrier risk
+      if (dangerLevel > 0.05 && (questHud.state === "countdown" || questHud.state === "wave")) {
+        const pulse = 0.52 + Math.sin(performance.now() * (0.006 + dangerLevel * 0.01)) * 0.48;
+        const stripH = 16;
+        const stripW = Math.min(canvasEl.width * 0.56, 520);
+        const stripX = (canvasEl.width - stripW) * 0.5;
+        const stripY = compactHud ? 82 : 124;
+
+        const base = ctx.createLinearGradient(stripX, stripY, stripX + stripW, stripY);
+        base.addColorStop(0, `rgba(255, 130, 108, ${0.2 + dangerLevel * 0.26})`);
+        base.addColorStop(1, `rgba(255, 214, 144, ${0.18 + dangerLevel * 0.22})`);
+        ctx.fillStyle = base;
+        ctx.fillRect(stripX, stripY, stripW, stripH);
+
+        // animated surge markers drifting right, implying left-side incoming wave
+        const markerCount = 7;
+        const markerSpan = stripW / markerCount;
+        const shift = (performance.now() * (0.09 + dangerLevel * 0.12)) % markerSpan;
+        ctx.fillStyle = `rgba(255, 242, 220, ${0.24 + pulse * 0.28})`;
+        for (let i = -1; i < markerCount + 1; i++) {
+          const mx = stripX + i * markerSpan + shift;
+          ctx.beginPath();
+          ctx.moveTo(mx - 14, stripY + stripH * 0.5);
+          ctx.lineTo(mx - 2, stripY + 2);
+          ctx.lineTo(mx + 14, stripY + 2);
+          ctx.lineTo(mx + 2, stripY + stripH * 0.5);
+          ctx.lineTo(mx + 14, stripY + stripH - 2);
+          ctx.lineTo(mx - 2, stripY + stripH - 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        const fillW = Math.round(stripW * Math.max(0, Math.min(1, dangerLevel)));
+        ctx.fillStyle = `rgba(255, 108, 86, ${0.28 + pulse * 0.36})`;
+        ctx.fillRect(stripX, stripY, fillW, stripH);
+
+        ctx.strokeStyle = `rgba(255, 236, 214, ${0.42 + pulse * 0.32})`;
+        ctx.strokeRect(stripX - 0.5, stripY - 0.5, stripW + 1, stripH + 1);
+
+        const warningText = questHud.state === "wave" ? "WAVE IMPACT" : urgencyGap > 0 ? "DANGER: BARRIER LOW" : "TSUNAMI APPROACHING";
+        ctx.fillStyle = "#fff1e8";
+        ctx.font = "bold 12px system-ui";
+        ctx.fillText(`${warningText}  •  ${Math.round(dangerLevel * 100)}%`, stripX + 10, stripY - 5);
+
+        // subtle whole-screen alert tint when danger gets high
+        if (dangerLevel > 0.55) {
+          ctx.fillStyle = `rgba(255, 98, 82, ${(dangerLevel - 0.5) * 0.09 + pulse * 0.02})`;
+          ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+        }
       }
 
       if (questHud.state === "success" || questHud.state === "fail") {
