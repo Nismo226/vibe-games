@@ -1168,6 +1168,9 @@ export const Dust = () => {
       const cinematicToe = 0.04 + humidity * 0.045 + waveVisualIntensity * 0.03;
       const chromaPulse = 0.01 + (Math.sin(now * 0.0018) * 0.5 + 0.5) * 0.01;
       const skylineScatter = clamp01(0.14 + (1 - stormMood) * 0.24 + sunsetWarmth * 0.16);
+      const sandAlbedoBoost = lerp(0.88, 1.06, clamp01((1 - stormMood) * 0.72 + sunsetWarmth * 0.22));
+      const waterLuminanceLift = lerp(0.84, 1.1, clamp01((1 - stormMood) * 0.58 + waveVisualIntensity * 0.35));
+      const uiNoiseFade = clamp01(0.82 - waveVisualIntensity * 0.28 - stormMood * 0.22);
 
       ctx.save();
       ctx.translate(canvasEl.width * 0.5, canvasEl.height * 0.5);
@@ -1310,7 +1313,7 @@ export const Dust = () => {
             const coolShadow = Math.floor(8 + (1 - duneBand) * 10);
             const warmSand = Math.floor(18 + sunsetWarmth * 22);
             const mineralTint = Math.floor((hash2(x * 7 + 5, y * 7 + 13) - 0.5) * 10);
-            ctx.fillStyle = `rgb(${Math.floor((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint) * microContrast)}, ${Math.floor((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5) * microContrast)}, ${Math.floor((base - 20 - coolShadow + mineralTint * 0.3) * microContrast)})`;
+            ctx.fillStyle = `rgb(${Math.floor((base + 30 + Math.floor(duneWave * 6) + warmSand + mineralTint) * microContrast * sandAlbedoBoost)}, ${Math.floor((base + 12 + Math.floor(duneWave * 4) + warmSand * 0.55 + mineralTint * 0.5) * microContrast * sandAlbedoBoost)}, ${Math.floor((base - 20 - coolShadow + mineralTint * 0.3) * microContrast * (0.94 + (sandAlbedoBoost - 1) * 0.5))})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const windSheen = Math.sin(now * 0.0018 + x * 0.92 - y * 0.34) * 0.5 + 0.5;
@@ -1472,7 +1475,7 @@ export const Dust = () => {
             const depthTint = localDepth * 5;
             const cyanLift = Math.floor((1 - stormMood) * 12 + sunsetWarmth * 6);
             const coastalGreen = Math.floor(6 + (1 - stormMood) * 8 + Math.max(0, 2 - localDepth) * 2);
-            ctx.fillStyle = `rgba(${22 + Math.floor(wn * 16)}, ${deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen}, ${228 + Math.floor(wn * 26) - Math.floor(localDepth * 3)}, ${0.84 + wavelet * 0.1})`;
+            ctx.fillStyle = `rgba(${22 + Math.floor(wn * 16)}, ${Math.floor((deep - Math.floor(depthBoost * 70) - depthTint + cyanLift + coastalGreen) * waterLuminanceLift)}, ${Math.floor((228 + Math.floor(wn * 26) - Math.floor(localDepth * 3)) * (0.94 + (waterLuminanceLift - 1) * 0.8))}, ${0.8 + wavelet * 0.08 + (waterLuminanceLift - 0.84) * 0.18})`;
             ctx.fillRect(sx, sy, CELL, CELL);
 
             const sedimentMix =
@@ -1588,6 +1591,13 @@ export const Dust = () => {
               crestGlow.addColorStop(1, "rgba(0,0,0,0)");
               ctx.fillStyle = crestGlow;
               ctx.fillRect(sx, sy - 1, CELL, CELL + 1);
+
+              const skyReflect = ctx.createLinearGradient(sx, sy, sx, sy + CELL);
+              skyReflect.addColorStop(0, `rgba(236, 246, 255, ${0.04 + (1 - stormMood) * 0.06})`);
+              skyReflect.addColorStop(0.55, "rgba(130, 194, 245, 0.03)");
+              skyReflect.addColorStop(1, "rgba(10, 42, 84, 0)");
+              ctx.fillStyle = skyReflect;
+              ctx.fillRect(sx, sy, CELL, CELL);
             }
 
             const caustic = hash2(x * 3 + Math.floor(t * 17), y * 5 + Math.floor(t * 12));
@@ -2154,9 +2164,6 @@ export const Dust = () => {
       if (questHud.state === "success") objective = `Success: ${questHud.resultText}`;
       if (questHud.state === "fail") objective = `Failed: ${questHud.resultText}`;
 
-      const visCols = Math.floor(canvasEl.width / CELL);
-      const visRows = Math.floor(canvasEl.height / CELL);
-      const visSquares = visCols * visRows;
       const compactHud =
         mouseRef.current.left ||
         mouseRef.current.right ||
@@ -2182,6 +2189,12 @@ export const Dust = () => {
       ctx.fillRect(14, 14, hudW, hudH);
       ctx.strokeStyle = "rgba(170,210,255,0.24)";
       ctx.strokeRect(14, 14, hudW, hudH);
+      const hudSheen = ctx.createLinearGradient(14, 14, 14 + hudW, 14 + hudH);
+      hudSheen.addColorStop(0, "rgba(214, 236, 255, 0.09)");
+      hudSheen.addColorStop(0.4, "rgba(214, 236, 255, 0.02)");
+      hudSheen.addColorStop(1, "rgba(16, 32, 52, 0.06)");
+      ctx.fillStyle = hudSheen;
+      ctx.fillRect(14, 14, hudW, hudH);
       ctx.fillStyle = "rgba(220,242,255,0.04)";
       ctx.fillRect(15, 15, hudW - 2, 1);
 
@@ -2196,10 +2209,11 @@ export const Dust = () => {
       ctx.shadowBlur = 6;
       ctx.shadowOffsetY = 1;
       ctx.fillStyle = "#d8eeff";
-      ctx.font = "16px system-ui";
-      ctx.fillText(`2D Dust ${GAME_VERSION} - Level 1: Tsunami Warning`, 28, 38);
-      ctx.font = "14px system-ui";
-      ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT} | Visible: ~${visSquares} cells (${visCols}x${visRows})`, 28, 60);
+      ctx.font = "600 16px system-ui";
+      ctx.fillText(`2D Dust ${GAME_VERSION} · Level 1`, 28, 38);
+      ctx.font = "13px system-ui";
+      ctx.fillStyle = `rgba(214, 234, 252, ${0.84 + uiNoiseFade * 0.12})`;
+      ctx.fillText(`Dirt: ${dirtRef.current}/${MAX_DIRT}`, 28, 58);
       ctx.shadowColor = "transparent";
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
@@ -2373,8 +2387,8 @@ export const Dust = () => {
 
       // subtle film grain + chroma jitter
       const t = performance.now() * 0.001;
-      ctx.fillStyle = `rgba(255,255,255,${filmGrainAmount + Math.sin(t * 2.7) * 0.003})`;
-      for (let i = 0; i < 130; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${(filmGrainAmount + Math.sin(t * 2.7) * 0.003) * uiNoiseFade})`;
+      for (let i = 0; i < Math.floor(86 + uiNoiseFade * 44); i++) {
         const gx = ((i * 73.13 + t * 97) % canvasEl.width + canvasEl.width) % canvasEl.width;
         const gy = ((i * 51.77 + t * 61) % canvasEl.height + canvasEl.height) % canvasEl.height;
         ctx.fillRect(gx, gy, 1, 1);
